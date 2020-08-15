@@ -212,6 +212,20 @@
 #define S1SPTOR        (*((volatile unsigned char *) 0xE0030018))
 #define S1SPINT        (*((volatile unsigned char *) 0xE003001C))
 
+
+/* SSP Controller */
+#define SSP_BASE_ADDR		0xE0068000
+#define SSPCR0         (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x00))
+#define SSPCR1         (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x04))
+#define SSPDR          (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x08))
+#define SSPSR          (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x0C))
+#define SSPCPSR        (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x10))
+#define SSPIMSC        (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x14))
+#define SSPRIS         (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x18))
+#define SSPMIS         (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x1C))
+#define SSPICR         (*(volatile unsigned long * )(SSP_BASE_ADDR + 0x20))
+
+
 /* Real Time Clock */
 #define ILR            (*((volatile unsigned char *) 0xE0024000))
 #define CTC            (*((volatile unsigned short*) 0xE0024004))
