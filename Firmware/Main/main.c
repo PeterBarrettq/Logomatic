@@ -280,19 +280,18 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 	  {
 			int NoOfBytes=0;
 			
-		
-			// Below is the AD Control Register Address  AD0CR Address is E0034000  AD1CR Address is E0060000  
-			//Conversion for heel
-			/************************************* Gather value of A0.1 (HEEL WEIGHT) **********************************************/
-			if ((ADxCR == 0xE0034000) && (mask == 8)) //ADxCR is the peripheral address 
+			/* 
+			  * Gather value of A0.1 (HEEL WEIGHT) 
+		          * AD (Control Register Address), ADOCR = E0034000 , AD1CR = E0060000	
+			 * ADxCR (0xE0034000) is the peripheral address 
+			 */
+			if ((ADxCR == 0xE0034000) && (mask == 8)) 
 			{
-								
-				
-				heel_weight = (float)((value - 2.44)/1.1);    //2.44  // 1023 =  927.7818181818182
+				heel_weight = (float)((value - 2.44)/1.1);    	//2.44  // 1023 =  927.7818181818182
 				heel_weight =  heel_weight / 4.0; 				//add upon request
 		
-				if (heel_weight > 0.0 ){
-					
+				if (heel_weight > 0.0 )
+				{	
 					ftoa( heel_weight, p , 1); 		
 					
 					//calculate the number of bytes....
@@ -302,37 +301,38 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				else{
 				
 					heel_weight = 0.0;
-					p[0]='0';
-					p[1]='.';
-					p[2]='0';
-					p[3]='\0';
-					//ftoa( heel_weight, p , 1); 		
+					p[0]='0'; p[1]='.'; p[2]='0'; p[3]='\0';
+					/* ftoa( heel_weight, p , 1); */		
 					NoOfBytes = strlen(p) + ind + 1;					
 				}										
 			}
-			/************************************* Gather value of A0.2 (FFT WEIGHT) ***************************************************/
-			else if ((ADxCR == 0xE0034000) && (mask == 4)){
-
+			/*
+			Gather value of A0.2 (FFT WEIGHT) 
+			*/
+			else if ((ADxCR == 0xE0034000) && (mask == 4))
+			{
 				fft_weight = (float)((value - 6)/0.71); //1.5*4	
 				
 				//added upon peter request 
 				fft_weight = fft_weight/4.0;
 				
-				if (fft_weight > 0.0){
+				if (fft_weight > 0.0)
+				{
 					ftoa( fft_weight, p , 1); 		 //927.7817
 					NoOfBytes = strlen(p) + ind + 1;	
 
 				}
-				else{
+				else
+				{
 					fft_weight = 0.0;
-					p[0]='0';
-					p[1]='.';
-					p[2]='0';
-					p[3]='\0';
+					p[0]='0';p[1]='.';p[2]='0';p[3]='\0';
 					NoOfBytes = strlen(p) + ind + 1;	
 				}
 								
-				/************************************* SEND XBEE ***********************************************************************/
+				/*
+				 *	Send Data on Zigbee 
+				 */
+				 
 				//Gather total weight for average
 				total_WeightTemp = (float)(heel_weight + fft_weight);
 				total_WeightTemp = total_WeightTemp ;      //this weight total sent by uart to control unit.has to be incorporated				
@@ -436,7 +436,7 @@ static void MODE2ISR(void)
 			
 			xbee_cnt = 0;
 			uart0_SendChar(weight_Total);        /* Send Data through Xbee */
-
+			uart0_SendChar('\n');
 			
 			sleep_xbee(); //sleep the xbee.
 		}
@@ -502,8 +502,11 @@ static void MODE2ISR(void)
 	}
 	
 
-		/*  Calib sensing part */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )	//Check sw of calibration
+	/*  
+	 * Calib Switch Sensing Part 
+	 */
+	 /* HIGH Logic */
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )	
 	{	
 		countL=0;
 		++countH;
@@ -519,6 +522,7 @@ static void MODE2ISR(void)
 			countH = 0;
 		}
 	}
+	/* LOW Logic */
 	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (SwFlag==1) && (timerFLAG == 1) ) //Check sw of calibration
 	{
 		countH = 0; 
@@ -1181,258 +1185,105 @@ void mode_action(void)
   int j;
   while(1)
   {
-    
-	//entered in the calibration mode if you are out of this 
+	/*
+	 * Calibration Mode Detected 
+	 */
+
 	if (calibrationModeFLAG == 1)
 	{
 	
 		if (flash_Calib_led == 1){
 			
-			//uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+			
+			/* Flash the Status Led */
 			flash_CalibLED();
 			
-			//enable timer and check for switches in second capture. //
+			/*Enabling timer and check for switches in second capture.*/
 			timerFLAG =1;
 			secondCapture = 1;
-			
 			flash_Calib_led = 0;
 			
-			//uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 		}
 		
-		
+		/*
+		 * Second Capture detected program digipots 
+		 */
 		if (programDigipots_FLAG == 1)
 		{
-		
 			char printbuf[30];
-			int calibrationSuccessStat = 0;
 		
 			//uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			uart0_SendString ("\r\nsno of switch pressed ="); uart0_SendChar (swHighCount+48);
 
-			// Read switch count here 
-			// Check heel and fft here
-			// Check if not equal to zero then continue
-			// Increase steps till 30 output is 10.
-			// Flash LED...
-			/*******************   Heel Weight *************************/
+			/* Read switch count here 
+			 * Check heel and fft here
+			 * Check if not equal to zero then continue
+			 * Increase steps till 30 output is 10.
+			 * Flash LED...
+			 * Heel Weight 
+			 */
 			if (heel_weight > 0.00)
 			{
 				
-				uart0_SendString ("\r\n Before Program Heel Weight Detected, Heel Value = "); ftoa (heel_weight, printbuf, 3);uart0_SendString (printbuf);
-				programHeel_DIGIPOTS(1); //25 heel value at 1
+				uart0_SendString ("\r\nHeel Value = "); 
+				ftoa (heel_weight, printbuf, 3);
+				uart0_SendString (printbuf);
+				//programHeel_DIGIPOTS(1); //25 heel value at 1
 				delay_ms(1);
-
-				uart0_SendString ("\r\n After Program Heel Weight Detected, Heel Value = "); ftoa (heel_weight, printbuf, 3);uart0_SendString (printbuf);
-				delay_ms(2);
-												
-				if (swHighCount == 1)
-				{ 
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++){
-						
-						//Calibrated
-						if (heel_weight >= 10.00){
-							flash_CalibLED();
-							calibrationSuccessStat = 1;
-							break;
-						}
-						
-						//else program  and check its resistance
-						else{
-							programHeel_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat = 0;
-						}
-						delay_ms (20);
-					}
-				}
-				else if (swHighCount == 2)
+				
+				switch (swHighCount)
 				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++){
-						
-						//Calibrated
-						if (heel_weight >= 20.00){
-							flash_CalibLED();
-							calibrationSuccessStat = 1;
-							break;
-						}
-						
-						//else program heel digipot and check its resistance
-						else{
-							programHeel_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat =0;
-						}
-						delay_ms (20);
-					}
+					case 1:
+						uart0_SendString ("\r\n HEEL: Pressed 1 time."); 
+						break;
+					case 2:
+						uart0_SendString ("\r\n HEEL: Pressed 2 time."); 
+						break;
+					case 3: 
+						uart0_SendString ("\r\n HEEL: Pressed 3 time."); 
+						break;
+					default:
+						break;
 				}
-				else if (swHighCount == 3)
-				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++){
-						
-						//Calibrated
-						if (heel_weight >= 30.00){
-							flash_CalibLED();
-							calibrationSuccessStat=1;
-							break;
-						}
-						
-						//else program heel digipot and check its resistance
-						else{
-							programHeel_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat=0;
-						}
-						delay_ms (20);
-					}
-				}
-				else if (swHighCount == 4)
-				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++){
-						
-						//Calibrated
-						if (heel_weight >= 40.00){
-							flash_CalibLED();
-							calibrationSuccessStat =1;
-							break;
-						}
-						
-						//else program heel digipot and check its resistance
-						else{
-							programHeel_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat=0;
-						}
-						delay_ms (20);
-					}
-				}
-				uart0_SendString ("\r\n HEEL DIGIPOT PROGRAMMED THE STEPS:"); 
-				intToStr (STEPS_DIGIPOT, printbuf, 10); uart0_SendString (printbuf);	
-				if (calibrationSuccessStat==1){
-					uart0_SendString ("\r\nHEEL Calibration Successful."); 
-				}
-				else{
-					uart0_SendString ("\r\nHEEL Calibration Unsuccessful."); 
-				}
-			}
-			else
-			{
+			}else{
 				uart0_SendString ("\r\nKindly put weight before calibrating as current heel weight is zero...."); 
-			
 			}
 			
-			/************* FFT Weight ******************/
-			if (fft_weight > 0.00){
-			
-				uart0_SendString ("\r\n FFT Weight Detected, FFT Value = "); ftoa (fft_weight, printbuf, 3);uart0_SendString (printbuf);
-				programFFT_DIGIPOTS(1);
-												
-				if (swHighCount == 1)
-				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++)
-					{
-						//Calibrated
-						if (fft_weight >= 10.00)
-						{
-							flash_CalibLED();
-							calibrationSuccessStat=1;
-							break;
-						}
-						
-						//else program heel digipot and check its resistance
-						else
-						{
-							programFFT_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat=0;
-						}
-						delay_ms (20);
-					}
-				}
-				else if (swHighCount == 2)
-				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++)
-					{
-						
-						/* Calibrated */
-						if (fft_weight >= 20.00)
-						{
-							flash_CalibLED();
-							calibrationSuccessStat=1;
-							break;
-						}
-						
-						/* program heel digipot and check its resistance */
-						else
-						{
-							programFFT_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat=0;
-						}
-						delay_ms (20);
-					}
-				}
-				
-				
-				else if (swHighCount == 3)
-				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++)
-					{
-						
-						/* Calibrated */
-						if (fft_weight >= 30.00)
-						{
-							flash_CalibLED();
-							calibrationSuccessStat=1;
-							break;
-						}
-						
-						/* program heel digipot and check its resistance */
-						else{
-							programFFT_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat=0;
-						}
-						delay_ms (20);
-					}
-				}
-				else if (swHighCount == 4)
-				{
-					for (STEPS_DIGIPOT = 6; STEPS_DIGIPOT <= 150 ; STEPS_DIGIPOT++)
-					{
-						/* Calibrated*/
-						if (fft_weight >= 40.00)
-						{
-							flash_CalibLED();
-							calibrationSuccessStat=1;
-							break;
-						}
-						/* program heel digipot and check its resistance */
-						else{
-							programFFT_DIGIPOTS(STEPS_DIGIPOT);
-							calibrationSuccessStat=0;
-						}
-						delay_ms (20);
-					}
-				}
-				
-				uart0_SendString ("\r\n FFT DIGIPOT PROGRAMMED THE STEPS:"); 
-				intToStr (STEPS_DIGIPOT, printbuf, 10); uart0_SendString (printbuf);
-				
-				if (calibrationSuccessStat==1)
-				{
-					uart0_SendString ("\r\nHEEL Calibration Successful."); 
-				}
-				
-				else
-				{
-					uart0_SendString ("\r\nHEEL Calibration Unsuccessful."); 
-				}
-			}
-			else
+			/*
+			 * Forefoot Weight 
+			 */
+			if (fft_weight > 0.00)
 			{
+				uart0_SendString ("\r\n FFT Weight Detected, FFT Value = "); 
+				ftoa (fft_weight, printbuf, 3);
+				uart0_SendString (printbuf);
+				switch (swHighCount)
+				{
+					case 1:
+						uart0_SendString ("\r\n FFT: Pressed 1 time."); 
+						/* Program Digipots OR Analog Pots here*/
+						break;
+					case 2:
+						uart0_SendString ("\r\n FFT: Pressed 2 time."); 
+						/* Program Digipots OR Analog Pots here*/
+						break;
+					case 3: 
+						uart0_SendString ("\r\n FFT: Pressed 3 time."); 
+						/* Program Digipots OR Analog Pots here*/
+						break;
+					default:
+						break;
+				}
+			}else{
 				uart0_SendString ("\r\nKindly put weight before calibrating as current FFT weight is zero...."); 
-			
 			}
 
 			// calibration completed
 			calibrationModeFLAG = 0;
 			programDigipots_FLAG =0;
 		}
-		
 	}
 	else
 	{
