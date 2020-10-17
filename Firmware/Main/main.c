@@ -159,13 +159,11 @@ uint16_t xbee_cnt = 0;
 uint8_t XBEE_SEND_FLAG = 0;
 static uint8_t WeightAvg[20];
 
-
 int weight_Total=0;
 float heel_weight=0.0, fft_weight=0.0;
 uint8_t k=0, iter=0,total_WeightTemp=0;
-
 #define XBEE_TICKS  10
-
+#define NUM_AVERAGE 16
 /*********************************************************/
 uint8_t SwFlag = 0;  //flag for maintain switch high and lows
 uint8_t timerFLAG = 1; //you can start and stop timer using timerFLAG , 1 means start 0 means stop
@@ -179,7 +177,8 @@ uint8_t flash_Calib_led=1; //flashes the led on calibration
 uint8_t programDigipots_FLAG = 0; //when it is high program digipots.
 uint8_t STEPS_DIGIPOT = 25;  //digipots will be program will a step of 50.
 /********************************************************/
-
+uint16_t adc_fft=0;
+void calibrate_load_cell(uint16_t *adc);
 
 
 /*******************************************************
@@ -203,11 +202,10 @@ int main (void)
 	SPI1_Init();
 
 	fat_initialize();  
-	uart0_SendString("Welcome to logomatic\n\r");
+	uart0_SendString("Hello Logomatic\n\r");
  
 	// Flash Status Lights
-	for(i = 0; i < 5; i++)
-	{
+	for(i = 0; i < 5; i++){
 		//set_gpio(1<<Calib_LED);
 		stat(0,ON);
 		delay_ms(50);
@@ -224,41 +222,31 @@ int main (void)
 	while(root_file_exists(name))
 	{
 		count++;
-		if(count == 250)  //BHW TODO: This less than 250 limit doesn't match docs
-		{
-			  while(1)
-			  {
+		if(count == 250){
+			uart0_SendString("Got count = 250 \n\r");
+			  while(1){
 					stat(0,ON);
 					stat(1,ON);
 					delay_ms(1000);
 					stat(0,OFF);
 					stat(1,OFF);
 					delay_ms(1000);
-					//uart0_SendString ("\r\n only toggling led...");
 			  }
-		
 		}
 		string_printf(name,"LOG%02d.txt",count);
-	
 	}
-	//uart0_SendString ("\r\n\r\n\r\n Intialized  \r\n");
 	handle = root_open_new(name);
-
 	sd_raw_sync();  
 	
-	if(mode == 0)	
-	{
+	if(mode==0){
 		mode_0(); 
 	}
-	else if(mode == 1)
-	{ 
+	else if(mode==1){ 
 		mode_1(); 
 	}
-	else if(mode == 2)
-	{ 
+	else if(mode==2){ 
 		mode_2(); 
 	}
-
 	return 0;
 }
 
@@ -272,58 +260,44 @@ Moreover compose the values of total weight and takes its average before sending
 to xbee every 100ms
 **********************************************************************************/
 																								
-static inline int pushValue(char* q, int ind, int value, volatile unsigned long* ADxCR, int mask)
-{
+static inline int pushValue(char* q, int ind, int value, volatile unsigned long* ADxCR, int mask){
 	  char* p = q + ind;
-
-	  if(asc == 'Y') // ASCII
-	  {
+	  if(asc == 'Y') {
 			int NoOfBytes=0;
 			
 			/* 
 			  * Gather value of A0.1 (HEEL WEIGHT) 
-		          * AD (Control Register Address), ADOCR = E0034000 , AD1CR = E0060000	
+		     * AD (Control Register Address), ADOCR = E0034000 , AD1CR = E0060000	
 			 * ADxCR (0xE0034000) is the peripheral address 
 			 */
-			if ((ADxCR == 0xE0034000) && (mask == 8)) 
-			{
-				heel_weight = (float)((value - 2.44)/1.1);    	//2.44  // 1023 =  927.7818181818182
-				heel_weight =  heel_weight / 4.0; 				//add upon request
-		
-				if (heel_weight > 0.0 )
-				{	
-					ftoa( heel_weight, p , 1); 		
-					
-					//calculate the number of bytes....
-					NoOfBytes = strlen(p) + ind + 1;		
+			if ((ADxCR == 0xE0034000) && (mask == 8)) {
+				heel_weight = (float)((value - 2.44)/1.1);    	
+				heel_weight =  heel_weight / 4.0; 			
 				
+				if (heel_weight > 0.0 ){	
+					ftoa( heel_weight, p , 1); 		
+					NoOfBytes = strlen(p) + ind + 1;    									
 				}
 				else{
-				
 					heel_weight = 0.0;
 					p[0]='0'; p[1]='.'; p[2]='0'; p[3]='\0';
-					/* ftoa( heel_weight, p , 1); */		
 					NoOfBytes = strlen(p) + ind + 1;					
 				}										
 			}
 			/*
 			Gather value of A0.2 (FFT WEIGHT) 
 			*/
-			else if ((ADxCR == 0xE0034000) && (mask == 4))
-			{
-				fft_weight = (float)((value - 6)/0.71); //1.5*4	
+			else if ((ADxCR == 0xE0034000) && (mask == 4)){
+				//fft_weight = (float)((value - 6)/0.71); 	
+				//fft_weight = fft_weight/4.0;
 				
-				//added upon peter request 
-				fft_weight = fft_weight/4.0;
+				adc_fft = value; 
 				
-				if (fft_weight > 0.0)
-				{
-					ftoa( fft_weight, p , 1); 		 //927.7817
+				if (fft_weight > 0.0){
+					ftoa( fft_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;	
-
 				}
-				else
-				{
+				else{
 					fft_weight = 0.0;
 					p[0]='0';p[1]='.';p[2]='0';p[3]='\0';
 					NoOfBytes = strlen(p) + ind + 1;	
@@ -343,16 +317,13 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				WeightAvg[iter++] = (unsigned char)(total_WeightTemp);
 				
 				//Take average of only 16 samples....
-				if (iter > 16){
-					
+				if (iter > NUM_AVERAGE){
 					iter = 0;
-					
-					for (k=0; k<16; k++){
+					for (k=0; k<NUM_AVERAGE;k++){
 						weight_Total += WeightAvg[k];
 					}
-					weight_Total = weight_Total >> 4; //Divide by 16
+					weight_Total = weight_Total/NUM_AVERAGE; //Divide by 16
 				}
-				/***************************************************************************************************************************/
 			}
 			//all other pins except A0.2 and A0.3				
 			else{
@@ -360,18 +331,14 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				// trailing '\0', hence the "+ 1"
 				NoOfBytes = itoa(value, p, 10) + ind + 1;	
 			}
-				
-		
 			return NoOfBytes;
 	  }
-	  else if(asc == 'N') // binary
-	  {
+	  else if(asc == 'N'){
 			p[0] = value >> 8;
 			p[1] = value;
 			return ind + 2;
 	  }
-	  else // invalid
-	  {
+	  else{
 			return ind;
 	  }
 }
@@ -379,9 +346,7 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 							//get adc sample
   /******************************************************************************/
 
-static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsigned long* ADxDR, int mask, char adx_bit)
-{	
-	
+static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsigned long* ADxDR, int mask, char adx_bit){	
 	//adx_bit tells whether adc is enabled or not.....
 	if(adx_bit == 'Y')
 	{
@@ -408,39 +373,35 @@ static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsi
 		return ind;
 	}
 }
-  /******************************************************************************/
-		//Timer 0 ISR  (10MS INTERRUPT or 100 FREQUENCY)
-  /******************************************************************************/
-static void MODE2ISR(void)
-{
+/*
+ *Timer 0 ISR  (10ms Interrupt or 100 Frequency)
+ */
+static void MODE2ISR(void){
   int ind = 0;
   int j;
   char q[50];
-
-
   T0IR = 1; // reset TMR0 interrupt
   
-  for(j = 0; j < 50; j++)
-  {
+  for(j = 0; j < 50; j++){
 		q[j] = 0;
   }
 
 #define SAMPLE(X, BIT) ind = sample(q, ind, &AD##X##CR, &AD##X##DR, 1 << BIT, ad##X##_##BIT)
-  /*******************************************************************************************/
-  //every 100ms send the data on the xbee
+  
+    /*Every 100ms send the data on the xbee*/
 	if (freq == 100){
 	++xbee_cnt; 
 	
-		//CASE 1: SEND THE DATA AND GO TO SLEEP
+		/*CASE 1:Send the data and put xbee in sleep mode*/
 		if (xbee_cnt > XBEE_TICKS ){
 			
 			xbee_cnt = 0;
-			uart0_SendChar(weight_Total);        /* Send Data through Xbee */
-			uart0_SendChar('\n');
-			
+			 /* Send Data through Xbee */
+			//uart0_SendChar(weight_Total);       
+			//uart0_SendChar('\n');
 			sleep_xbee(); //sleep the xbee.
 		}
-		//CASE 2: WAKE UP THE XBEE 
+		/*CASE 2:Wake up xbee for sending the data*/ 
 		else if (xbee_cnt == 9){
 			wake_xbee(); //Wake up xbee	
 		}
@@ -452,19 +413,15 @@ static void MODE2ISR(void)
 		SwCount = 0;
 		timerFLAG = 0;
 	}
-	else
-	{
+	else{
 		//timerFlag means timer is working
-		if (timerFLAG == 1)
-		{
+		if (timerFLAG == 1){
 			++SwCount;
 		}
 			
 		// first capture captures first 5 seconds of the startup.
-		if (firstCapture == 1)
-		{
-			if (swHighCount > 0)
-			{
+		if (firstCapture == 1){
+			if (swHighCount > 0){
 				/* reset counters */ 
 				SwCount = 0;
 				
@@ -486,10 +443,8 @@ static void MODE2ISR(void)
 		 *scan fft value for 10 = program the fft  = flash led ...
 		 *capture no of switch press wait till timer 5 second is finished and timerFlag becomes 0 
 		 */
-		if (secondCapture == 1)
-		{	
-			if (timerFLAG == 0)
-			{
+		if (secondCapture == 1){	
+			if (timerFLAG == 0){
 				//calibrationModeFLAG = 0 ;
 				
 				//second capture time is completed
@@ -500,20 +455,15 @@ static void MODE2ISR(void)
 			}
 		}
 	}
-	
-
 	/*  
 	 * Calib Switch Sensing Part 
 	 */
 	 /* HIGH Logic */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )	
-	{	
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )	{	
 		countL=0;
 		++countH;
-		
 		/* 40ms debouncing */
-		if (countH > 10)
-		{
+		if (countH > 10){
 			SwFlag = 1;
 			swHighCount++;
 			
@@ -523,13 +473,10 @@ static void MODE2ISR(void)
 		}
 	}
 	/* LOW Logic */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (SwFlag==1) && (timerFLAG == 1) ) //Check sw of calibration
-	{
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (SwFlag==1) && (timerFLAG == 1) ){
 		countH = 0; 
 		++countL;
-		
-		if (countL > 10)
-		{
+		if (countL > 10){
 			SwFlag = 0;
 	
 			//reset flags
@@ -538,23 +485,19 @@ static void MODE2ISR(void)
 		}
 		//clear_gpio (1<<Calib_LED); //low
 	}
-  /*******************************************************************************************/
-
-  SAMPLE(1, 3); //AD1.3
-  SAMPLE(0, 3); //AD0.3
-  SAMPLE(0, 2); //AD0.2
-  SAMPLE(0, 1); //AD0.1
-  SAMPLE(1, 2); //AD1.2
-  SAMPLE(0, 4); //AD0.4
-  SAMPLE(1, 7); //AD1.7
-  SAMPLE(1, 6); //AD1.6
+	SAMPLE(1, 3); //AD1.3
+	SAMPLE(0, 3); //AD0.3
+	SAMPLE(0, 2); //AD0.2
+	SAMPLE(0, 1); //AD0.1
+	SAMPLE(1, 2); //AD1.2
+	SAMPLE(0, 4); //AD0.4
+	SAMPLE(1, 7); //AD1.7
+	SAMPLE(1, 6); //AD1.6
 #undef SAMPLE
   
-  for(j = 0; j < ind; j++)
-  {
+  for(j = 0; j < ind; j++){
 		//less than buf size
-		if(RX_in < BUF_SIZE)
-		{
+		if(RX_in < BUF_SIZE){
 			RX_array1[RX_in] = q[j];
 			RX_in++;
 		
@@ -563,39 +506,30 @@ static void MODE2ISR(void)
 			}	//Raise Log_Array1 FLAG HIGH if Rx_array1 buffer is FULL.
 		}
 		//buffer overflow handling
-		else if(RX_in >= BUF_SIZE)
-		{
+		else if(RX_in >= BUF_SIZE){
 			RX_array2[RX_in - BUF_SIZE] = q[j];
 			RX_in++;
 			
 			//if buffer is full raise the log_array2 flag
-			if(RX_in == 2 * BUF_SIZE)
-			{
+			if(RX_in == 2 * BUF_SIZE){
 				log_array2 = 1;
 				RX_in = 0;   // CLEAR THE COUNTS
 			}
 		}
   }
-  /******************************************************************************/
-  if(RX_in < BUF_SIZE)
-  {
+  if(RX_in < BUF_SIZE){
 		if(asc == 'N') { 
 			RX_array1[RX_in] = '$'; 
 		}
-		
 		else if(asc == 'Y'){
 			RX_array1[RX_in] = 13; 
 		}
 		RX_in++;
-	
 		if(RX_in == BUF_SIZE){
 			log_array1 = 1;
 		}
   }
-  
-  else if(RX_in >= BUF_SIZE)
-  {
-
+  else if(RX_in >= BUF_SIZE){
 		if(asc == 'N'){
 			RX_array2[RX_in - BUF_SIZE] = '$';
 		}
@@ -610,9 +544,7 @@ static void MODE2ISR(void)
 		  RX_in = 0;
 		}
   }
-  /******************************************************************************/
-  if(RX_in < BUF_SIZE)
-  {
+  if(RX_in < BUF_SIZE){
     if(asc == 'N'){
 		RX_array1[RX_in] = '$';
 	}
@@ -620,27 +552,23 @@ static void MODE2ISR(void)
 		RX_array1[RX_in] = 10; 
 	}
     RX_in++;
-
     if(RX_in == BUF_SIZE) log_array1 = 1;
   }
   
-  else if(RX_in >= BUF_SIZE)
-  {
-    
+  else if(RX_in >= BUF_SIZE){
     if(asc == 'N') RX_array2[RX_in - BUF_SIZE] = '$';
-    else if(asc == 'Y'){ RX_array2[RX_in - BUF_SIZE] = 10; }
+    else if(asc == 'Y'){ 
+		RX_array2[RX_in - BUF_SIZE] = 10; 
+	}
     RX_in++;
-    
-    if(RX_in == 2 * BUF_SIZE)
-    {
-      log_array2 = 1;
-      RX_in = 0;
+    if(RX_in == 2 * BUF_SIZE){
+		log_array2 = 1;
+		RX_in = 0;
     }
   }
-
-  VICVectAddr = 0;  // Acknowledge interrupt
+  VICVectAddr = 0;  
 }
-/*********************************************************************************/
+
 void FIQ_Routine(void)
 {
   int j;
@@ -759,81 +687,65 @@ CS1 = P0.20
 }
 
 // Make values in PLL control & configure registers take effect 
-void feed(void)
-{
+void feed(void){
 	// Interrupts must be disabled to make consecutive APB bus cycles
 	PLLFEED=0xAA;
 	PLLFEED=0x55;
 }
 
-static void UART0ISR(void)
-{
-  if(RX_in < BUF_SIZE)
-  {
+static void UART0ISR(void){
+  if(RX_in < BUF_SIZE){
      RX_array1[RX_in] = U0RBR;
      RX_in++;
-
     if(RX_in == BUF_SIZE) log_array1 = 1;
   }
-  else if(RX_in >= BUF_SIZE)
-  {
+  else if(RX_in >= BUF_SIZE){
      RX_array2[RX_in-BUF_SIZE] = U0RBR;
      RX_in++;
-
-    if(RX_in == 2 * BUF_SIZE)
-    {
+    if(RX_in == 2 * BUF_SIZE){
       log_array2 = 1;
       RX_in = 0;
     }
   }
-
-
   U0IIR; // Have to read this to clear the interrupt 
-
   VICVectAddr = 0;  // Acknowledge interrupt
 }
 
-static void UART0ISR_2(void)
-{
+static void UART0ISR_2(void){
   char temp;
-  temp = U0RBR; // Read a byte from UART0 receive buffer
-
-  if(temp == trig)
-  {
+  
+  temp = U0RBR; 
+    /*Read a byte from UART0 receive buffer */
+  if(temp == trig){
 		get_frame = 1;
   }
-  
-  if(get_frame)
-  {
-		if(RX_in < frame)
-		{
-			  RX_array1[RX_in] = temp;
-			  RX_in++;
+  if(get_frame){
+	if(RX_in < frame){
+		RX_array1[RX_in] = temp;
+		RX_in++;
 		
-			  if(RX_in == frame)
-			  {
-					// Delimiters
-					RX_array1[RX_in] = '\n';
-					RX_array1[RX_in + 1] = '\r';
-					log_array1 = 1;
-					get_frame = 0;
-			  }
+		if(RX_in == frame){
+			// Delimiters
+			RX_array1[RX_in] = '\n';
+			RX_array1[RX_in + 1] = '\r';
+			log_array1 = 1;
+			get_frame = 0;
 		}
-		else if(RX_in >= frame)
-		{
-			  RX_array2[RX_in - frame] = temp;
-			  RX_in++;
+	}
+	else if(RX_in >= frame){
+		RX_array2[RX_in - frame] = temp;
+		RX_in++;
 		
-			  if(RX_in == 2*frame)
-			  {
-					// Delimiters
-					RX_array2[RX_in - frame] = '\n';
-					RX_array2[RX_in + 1 - frame] = '\r';
-					log_array2 = 1;
-					get_frame = 0;
-					RX_in = 0;
-			  }
+		if(RX_in == 2*frame)
+		{
+			// Delimiters
+			RX_array2[RX_in - frame] = '\n';
+			RX_array2[RX_in + 1 - frame] = '\r';
+			log_array2 = 1;
+			get_frame = 0;
+			RX_in = 0;
 		}
+	}
   }
 
   temp = U0IIR; // Have to read this to clear the interrupt
@@ -842,61 +754,50 @@ static void UART0ISR_2(void)
 }
 
 
-void SWI_Routine(void)
-{
+void SWI_Routine(void){
   while(1);
 }
 
-void UNDEF_Routine(void)
-{
+void UNDEF_Routine(void){
   stat(0,ON);
 }
 
 
 //setup uart0
-void setup_uart0(int newbaud, char want_ints)
-{
+void setup_uart0(int newbaud, char want_ints){
   baud = newbaud;
   U0LCR = 0x83;   // 8 bits, no parity, 1 stop bit, DLAB = 1
   
   //set baud rate
-  if(baud == 1200)
-  {
+  if(baud == 1200){
     U0DLM = 0x0C;
     U0DLL = 0x00;
   }
-  else if(baud == 2400)
-  {
+  else if(baud == 2400){
     U0DLM = 0x06;
     U0DLL = 0x00;
   }
-  else if(baud == 4800)
-  {
+  else if(baud == 4800){
     U0DLM = 0x03;
     U0DLL = 0x00;
   }
-  else if(baud == 9600)
-  {
+  else if(baud == 9600){
     U0DLM = 0x01;
     U0DLL = 0x80;
   }
-  else if(baud == 19200)
-  {
+  else if(baud == 19200){
     U0DLM = 0x00;
     U0DLL = 0xC0;
   }
-  else if(baud == 38400)
-  {
+  else if(baud == 38400){
     U0DLM = 0x00;
     U0DLL = 0x60;
   }
-  else if(baud == 57600)
-  {
+  else if(baud == 57600){
     U0DLM = 0x00;
     U0DLL = 0x40;
   }
-  else if(baud == 115200)
-  {
+  else if(baud == 115200){
     U0DLM = 0x00;
     U0DLL = 0x20;
   }
@@ -904,8 +805,7 @@ void setup_uart0(int newbaud, char want_ints)
   U0FCR = 0x01;
   U0LCR = 0x03;   
 
-  if(want_ints == 1)
-  {
+  if(want_ints == 1){
 		enableIRQ(); 					          //enable the interrupt
 		VICIntSelect &= ~0x00000040;    		  //Interrupt select register = 0000 0000 0000 0000 0000 0000 0100 0000  = Selected UART for an interrupt by assigning 0
 		VICIntEnable |= 0x00000040;    		  //Interrupt Enable Register = 0000 0000 0000 0000 0000 0000 0100 0000  = This register enable interrupt request
@@ -913,8 +813,7 @@ void setup_uart0(int newbaud, char want_ints)
 		VICVectAddr1 = (unsigned int)UART0ISR;     //Holds the address of the ISR function, from where it will start its execution, hence pass the address of that function.
 		U0IER = 0x01;					          //Enable interrupt of the UART.
   }
-  else if(want_ints == 2)
-  {
+  else if(want_ints == 2){
 		enableIRQ();
 		VICIntSelect &= ~0x00000040;
 		VICIntEnable |= 0x00000040;
@@ -922,48 +821,36 @@ void setup_uart0(int newbaud, char want_ints)
 		VICVectAddr2 = (unsigned int)UART0ISR_2;
 		U0IER = 0X01;
   }
-  //don't want UART as an Interrupt
-  else if(want_ints == 0)
-  {
+  /*Configure UART without Interrupt*/
+  else if(want_ints == 0){
 		VICIntEnClr = 0x00000040;
 		U0IER = 0x00;
   }
 }
 
 
-/****************************************************************/
 //control status led on logomatic
-void stat(int statnum, int onoff)
-{
-  if(statnum) // Stat 1
-  {
+void stat(int statnum, int onoff){
+  /*Status 1 or Status LEDs are supported*/
+  if(statnum){
     if(onoff){ IOCLR0 = 0x00000800; } // On
     else     { IOSET0 = 0x00000800; } // Off
   }
-  else // Stat 0 
-  {
+  else{
     if(onoff){ IOCLR0 = 0x00000004; } // On
     else     { IOSET0 = 0x00000004; } // Off
   }
 }
-/****************************************************************/
-
-
-//set and reset gpio
-/*********************************************/
 
 // Sets the output to HIGH
-void set_gpio (uint32_t pin)
-{
+void set_gpio (uint32_t pin){
 	IOSET0 = pin;
 }
 // Sets the output to LOW
-void clear_gpio(uint32_t pin)
-{
+void clear_gpio(uint32_t pin){
 	IOCLR0 = pin;
 }
 
-/*********************************************/
 void sleep_xbee (void){
 	set_gpio (1U<<12);   //P8= P0.12=A1.3
 }
@@ -971,7 +858,7 @@ void sleep_xbee (void){
 void wake_xbee (void){
 	clear_gpio(1U<<12);  //P8= P0.12=A1.3
 }
-/*********************************************/
+
 
 //check the logcon.txt in the sd card if it is present read the string size, else create default L
 void Log_init(void)
@@ -1123,100 +1010,78 @@ void Log_init(void)
 
 /*
  Logs everything that comes in on UART0, provided that it's the right UART configuration (8 data bits, one stop bit, no parity, data rate of your choosing).
+ Auto UART mode
 */
-void mode_0(void) // Auto UART mode
-{
+void mode_0(void) {
   setup_uart0(baud,1);
   stringSize = BUF_SIZE;
+  /*Perform Action based on the mode*/
   mode_action();
 }
 
 /*
  Logs a specified number of characters ("Text Frame = 100" in this case will result in 99 characters logged after the trigger) after a specified character ("Trigger = $" in this case).
 */
-void mode_1(void)
-{
+void mode_1(void){
   setup_uart0(baud,2);
   stringSize = frame + 2;
-
+/*Perform Action based on the mode*/
   mode_action();
 }
 
 /*
 Logs ADC measurements according to which are selected as active (see below) at whatever frequency is specified ("Frequency = 100" in this case).
+Every 10 ms or 100 adc measurement is taken
+send data on xbee every 100ms 
 */
-//Every 10 ms or 100 adc measurement is taken
-//send data on xbee every 100ms 
-void mode_2(void)
-{
-	  enableIRQ();
-	  
-	  // Timer0  interrupt is an IRQ interrupt
-	  VICIntSelect &= ~0x00000010;
-	  
-	  // Enable Timer0 interrupt
-	  VICIntEnable |= 0x00000010;
-	  
-	  // Use slot 2 for Timer0 interrupt
-	  VICVectCntl2 = 0x24;
-	  
-	  // Set the address of ISR for slot 1
-	  VICVectAddr2 = (unsigned int)MODE2ISR;
-	
-	//When Timer Counter (TC) matches the MR0 interrupt is generated!
-	
-	  T0TCR = 0x00000002;	    // Reset counter and prescaler on the positive edge of PCLK 
-	  
-	  T0MCR = 0x00000003; 		// On match reset the counter and generate interrupt
-	  T0MR0 = 58982400 / freq;  // 58982400/100 =  589824
-	  
-	  //Prescale Register....
-	  T0PR = 0x00000000;       //prescale value is 0 
-	  
-	  //
-	  T0TCR = 0x00000001;      // enable timer
-	
-	  stringSize = BUF_SIZE;
-	  mode_action();
+void mode_2(void){
+		enableIRQ();
+		VICIntSelect &= ~0x00000010;	          //Timer0  interrupt is an IRQ interrupt
+		VICIntEnable |= 0x00000010;	  	          //Enable Timer0 interrupt
+		VICVectCntl2 = 0x24;	           		  //Use slot 2 for Timer0 interrupt
+		VICVectAddr2 = (unsigned int)MODE2ISR;	  //Set the address of ISR for slot 1	
+		//When Timer Counter (TC) matches the MR0 interrupt is generated!
+		T0TCR = 0x00000002;	                      //Reset counter and prescaler on the positive edge of PCLK 
+		T0MCR = 0x00000003; 		             //On match reset the counter and generate interrupt
+		T0MR0 = 58982400 / freq;                 // 58982400/100 =  589824
+		//Prescale Register....
+		T0PR = 0x00000000;                       //prescale value is 0 
+		T0TCR = 0x00000001;                      //enable timer
+		stringSize = BUF_SIZE;
+		
+		/*Perform Action based on the mode*/
+		mode_action();
 }
-//anydesk 
-void mode_action(void)
-{
-  int j;
+
+/*
+ * This function normal routine of Logomatic
+ */
+void mode_action(void){
+int j;
+
   while(1)
   {
 	/*
 	 * Calibration Mode Detected 
 	 */
-
-	if (calibrationModeFLAG == 1)
-	{
-	
+	if (calibrationModeFLAG == 1){
 		if (flash_Calib_led == 1){
-			
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-			
-			/* Flash the Status Led */
 			flash_CalibLED();
 			
 			/*Enabling timer and check for switches in second capture.*/
 			timerFLAG =1;
 			secondCapture = 1;
 			flash_Calib_led = 0;
-			
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 		}
-		
-		/*
-		 * Second Capture detected program digipots 
-		 */
-		if (programDigipots_FLAG == 1)
-		{
-			char printbuf[30];
-		
-			//uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-			uart0_SendString ("\r\nsno of switch pressed ="); uart0_SendChar (swHighCount+48);
+		if (programDigipots_FLAG == 1){
+			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+			uart0_SendString ("\r\nsno of switch pressed="); uart0_SendChar (swHighCount+48);
+			//calibrating fft
+			calibrate_load_cell(&adc_fft);
 
+			
 			/* Read switch count here 
 			 * Check heel and fft here
 			 * Check if not equal to zero then continue
@@ -1224,17 +1089,9 @@ void mode_action(void)
 			 * Flash LED...
 			 * Heel Weight 
 			 */
-			if (heel_weight > 0.00)
-			{
-				
-				uart0_SendString ("\r\nHeel Value = "); 
-				ftoa (heel_weight, printbuf, 3);
-				uart0_SendString (printbuf);
-				//programHeel_DIGIPOTS(1); //25 heel value at 1
+			if (heel_weight > 0.00){
 				delay_ms(1);
-				
-				switch (swHighCount)
-				{
+				switch (swHighCount){
 					case 1:
 						uart0_SendString ("\r\n HEEL: Pressed 1 time."); 
 						break;
@@ -1251,16 +1108,9 @@ void mode_action(void)
 				uart0_SendString ("\r\nKindly put weight before calibrating as current heel weight is zero...."); 
 			}
 			
-			/*
-			 * Forefoot Weight 
-			 */
-			if (fft_weight > 0.00)
-			{
-				uart0_SendString ("\r\n FFT Weight Detected, FFT Value = "); 
-				ftoa (fft_weight, printbuf, 3);
-				uart0_SendString (printbuf);
-				switch (swHighCount)
-				{
+			/* Handle Calibration of Fore-foot */
+			if (fft_weight > 0.00){
+				switch (swHighCount){
 					case 1:
 						uart0_SendString ("\r\n FFT: Pressed 1 time."); 
 						/* Program Digipots OR Analog Pots here*/
@@ -1279,26 +1129,19 @@ void mode_action(void)
 			}else{
 				uart0_SendString ("\r\nKindly put weight before calibrating as current FFT weight is zero...."); 
 			}
-
 			// calibration completed
 			calibrationModeFLAG = 0;
 			programDigipots_FLAG =0;
 		}
 	}
-	else
-	{
-			if(log_array1 == 1)
-			{
-			  stat(0,ON);
-			  
-			//print the data on the console before saving in sd-card.
-			  
-			  //WRITE THE RX_array1 values in the SD_CARD as it full
-			  if(fat_write_file(handle,(unsigned char *)RX_array1, stringSize) < 0)
-			  {	  
-			  
-					while(1)
-					{
+	/*Normal Condition*/
+	else{
+			if(log_array1 == 1){
+				stat(0,ON);
+				/* print the data on the console before saving in sd-card */
+				/*WRITE THE RX_array1 values in the SD_CARD as it full */
+				if(fat_write_file(handle,(unsigned char *)RX_array1, stringSize) < 0){	  
+					while(1){
 					  stat(0,ON);
 					  for(j = 0; j < 500000; j++);
 					  stat(0,OFF);
@@ -1306,21 +1149,18 @@ void mode_action(void)
 					  for(j = 0; j < 500000; j++);
 					  stat(1,OFF);
 					}
-			  }
-			  sd_raw_sync();
-			  stat(0,OFF);
-			  log_array1 = 0;
+				}
+				sd_raw_sync();
+				stat(0,OFF);
+				log_array1 = 0;
 			}
 		
-			if(log_array2 == 1)
-			{
-			  stat(1,ON);
-			  //print the data on the console before saving in sd-card.
-			  //WRITE THE RX_array2 values in the SD_CARD as it full
-			  if(fat_write_file(handle,(unsigned char *)RX_array2, stringSize) < 0)
-			  {	  
-					while(1)
-					{
+			if(log_array2 == 1){
+				stat(1,ON);
+				/* print the data on the console before saving in sd-card*/
+				/* WRITE THE RX_array2 values in the SD_CARD as it full */
+				if(fat_write_file(handle,(unsigned char *)RX_array2, stringSize) < 0){	  
+					while(1){
 						stat(0,ON);
 						for(j = 0; j < 500000; j++);
 						stat(0,OFF);
@@ -1333,41 +1173,37 @@ void mode_action(void)
 			  stat(1,OFF);
 			  log_array2 = 0;
 			}
-		
-			//if stop button is pressed 
-			if((IOPIN0 & 0x00000008) == 0) // if button pushed, log file & quit
-			{
-				  VICIntEnClr = 0xFFFFFFFF;
-			
-				  if(RX_in < BUF_SIZE)
-				  {
+			/* STOP Button Condition */
+			if((IOPIN0 & 0x00000008) == 0){
+				uart0_SendString ("\r\nSTOP BT Pressed!"); 
+				VICIntEnClr = 0xFFFFFFFF;
+				
+				if(RX_in < BUF_SIZE)
+				{
 					fat_write_file(handle, (unsigned char *)RX_array1, RX_in);
 					sd_raw_sync();
-				  }
-				  else if(RX_in >= BUF_SIZE)
-				  {
+				}
+				else if(RX_in >= BUF_SIZE)
+				{
 					fat_write_file(handle, (unsigned char *)RX_array2, RX_in - BUF_SIZE);
 					sd_raw_sync();
-				  }
-				  while(1)
-				  {
-						stat(0,ON);
-						for(j = 0; j < 500000; j++);
-						stat(0,OFF);
-						stat(1,ON);
-						for(j = 0; j < 500000; j++);
-						stat(1,OFF);
-				  }
+				}
+				while(1){
+					stat(0,ON);
+					for(j = 0; j < 500000; j++);
+					stat(0,OFF);
+					stat(1,ON);
+					for(j = 0; j < 500000; j++);
+					stat(1,OFF);
+				}
 			}
 		}
 	}
 }
 
-void test(void)
-{
+void test(void){
   delay_ms(5000);
-  while((IOPIN0 & 0x00000008) == 0x00000008)
-  {
+  while((IOPIN0 & 0x00000008) == 0x00000008){
     // Get AD1.3
     AD1CR = 0x0020FF08;
     AD_conversion(1);
@@ -1402,60 +1238,46 @@ void test(void)
 
     delay_ms(1000);
   }
-
-  while(1);
-    
+  while(1); 
 }
 
 /*
 *Analog to digital conversion
 */
-void AD_conversion(int regbank)
-{
+void AD_conversion(int regbank){
   int temp = 0, temp2;
 
   if(!regbank) // bank 0
   {
     AD0CR |= 0x01000000; // start conversion
-    while((temp & 0x80000000) == 0)
-    {
-      temp = AD0DR;//AD0DR0;//AD0DR;
+    while((temp & 0x80000000) == 0){
+      temp = AD0DR;
     }
     temp &= 0x0000FFC0;
     temp2 = temp / 0x00000040;
-
     AD0CR = 0x00000000;
   }
-  else      // bank 1
-  {
+  else{
     AD1CR |= 0x01000000; // start conversion
-    while((temp & 0x80000000) == 0)
-    {
+    while((temp & 0x80000000) == 0){
       temp = AD1DR;//AD1DR0;//AD1DR;
     }
     temp &= 0x0000FFC0;
     temp2 = temp / 0x00000040;
-
     AD1CR = 0x00000000;
   }
-  
 }
 
-void fat_initialize(void)
-{
-  if(!sd_raw_init())
-  {
+void fat_initialize(void){
+  if(!sd_raw_init()){
     while(1);
   }
-
-  if(openroot())
-  { 
+  if(openroot()){ 
   }
 }
 
 // Reverses a string 'str' of length 'len' 
-void reverse(char* str, int len) 
-{ 
+void reverse(char* str, int len) { 
     int i = 0, j = len - 1, temp; 
     while (i < j) { 
         temp = str[i]; 
@@ -1470,14 +1292,12 @@ void reverse(char* str, int len)
 // d is the number of digits required in the output.  
 // If d is more than the number of digits in x,  
 // then 0s are added at the beginning. 
-int intToStr(int x, char str[], int d) 
-{ 
+int intToStr(int x, char str[], int d){ 
     int i = 0; 
     while (x) { 
         str[i++] = (x % 10) + '0'; 
         x = x / 10; 
     } 
-  
     // If number of digits required is more, then 
     // add 0s at the beginning 
     while (i < d) 
@@ -1489,8 +1309,7 @@ int intToStr(int x, char str[], int d)
 } 
   
 // Converts a floating-point/double number to a string. 
-void ftoa(float n, char* res, int afterpoint) 
-{ 
+void ftoa(float n, char* res, int afterpoint) { 
     // Extract integer part 
     int ipart = (int)n; 
   
@@ -1629,3 +1448,99 @@ void flash_CalibLED(void){
 	delay_ms(1000);
 	clear_gpio (1<<Calib_LED); //low
 }
+
+/*
+* Calibrate Load Cell Heel or FFT
+* @ adc: ADC value of heel or fft
+*/
+void calibrate_load_cell(uint16_t *adc){
+	uint32_t cnt=0,offset_w=0,offset_nw=0,avg_adc=0;
+	float gain=0.0, kg=0.00;
+	char printbuf[30];
+	
+	uart0_SendString ("\r\n Don't Put the weight on sensor");
+	delay_ms(6000);
+	
+	while (1){
+		if (cnt>10){
+			uart0_SendString ("\r\n\r\noffset= ");	intToStr(offset_nw, printbuf, 1);	uart0_SendString (printbuf);
+			offset_nw/=10;
+			cnt=0;
+			break;
+		}else{
+			uart0_SendString ("\r\nadc= ");	intToStr(*adc, printbuf, 1);	uart0_SendString (printbuf);
+			offset_nw += *adc;
+			cnt++;
+			delay_ms(100);
+		}
+		//uart0_SendString ("\r\nHeel Value= ");	ftoa (heel_weight, printbuf, 3);	uart0_SendString (printbuf);
+		//uart0_SendString ("\t\tFFT Value= "); 	ftoa (fft_weight, printbuf, 3);		uart0_SendString (printbuf);
+	}
+	uart0_SendString ("\r\n Put the 5-Kg weight on sensor");
+	delay_ms(6000);
+	while (1){
+		if (cnt>10){
+			avg_adc = offset_w/10;
+			uart0_SendString ("\r\n\r\navg_adc= ");	intToStr(avg_adc, printbuf, 1);	uart0_SendString (printbuf);
+			gain = 5000.0/(avg_adc-offset_nw);
+			uart0_SendString ("\r\n\r\ngain= ");	ftoa(gain, printbuf, 3);	uart0_SendString (printbuf);
+			cnt=0;
+			break;
+		}else{
+			uart0_SendString ("\r\nadc_fft= ");	intToStr(*adc, printbuf, 1);	uart0_SendString (printbuf);
+			offset_w += *adc;
+			cnt++;
+			delay_ms(100);
+		}	
+	}
+	while(1){
+		kg = gain * (*adc - offset_nw);
+		uart0_SendString ("\r\ngram = ");	ftoa(kg, printbuf, 1);	uart0_SendString (printbuf);
+		delay_ms(250);
+	}
+
+}
+
+/*
+uint32_t cnt_fft=0,offset_w=0,offset_nw=0,avg_adc=0;
+float gain=0.0, kg_fft=0.00;
+			uart0_SendString ("\r\n Don't Put the weight on fft");
+			delay_ms(6000);
+			while (1){
+				if (cnt_fft>6){
+					uart0_SendString ("\r\n\r\noffset= ");	intToStr(offset_nw, printbuf, 1);	uart0_SendString (printbuf);
+					offset_nw/=6;
+					cnt_fft=0;
+					break;
+				}else{
+					uart0_SendString ("\r\nadc_fft= ");	intToStr(adc_fft, printbuf, 1);	uart0_SendString (printbuf);
+					offset_nw += adc_fft;
+					cnt_fft++;
+					delay_ms(100);
+				}
+				//uart0_SendString ("\r\nHeel Value= ");	ftoa (heel_weight, printbuf, 3);	uart0_SendString (printbuf);
+				//uart0_SendString ("\t\tFFT Value= "); 	ftoa (fft_weight, printbuf, 3);		uart0_SendString (printbuf);
+			}
+			uart0_SendString ("\r\n Put the 5-Kg weight on fft");
+			delay_ms(6000);
+			while (1){
+				if (cnt_fft>10){
+					avg_adc = offset_w/10;
+					uart0_SendString ("\r\n\r\navg_adc= ");	intToStr(avg_adc, printbuf, 1);	uart0_SendString (printbuf);
+					gain = 5000.0/(avg_adc-offset_nw);
+					uart0_SendString ("\r\n\r\ngain= ");	ftoa(gain, printbuf, 3);	uart0_SendString (printbuf);
+					cnt_fft=0;
+					break;
+				}else{
+					uart0_SendString ("\r\nadc_fft= ");	intToStr(adc_fft, printbuf, 1);	uart0_SendString (printbuf);
+					offset_w += adc_fft;
+					cnt_fft++;
+					delay_ms(100);
+				}	
+			}
+			while(1){
+				kg_fft = gain * (adc_fft - offset_nw)/1000.0;
+				uart0_SendString ("\r\ngram_fft= ");	intToStr(kg_fft, printbuf, 1);	uart0_SendString (printbuf);
+				delay_ms(250);
+			}
+*/
