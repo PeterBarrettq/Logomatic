@@ -171,18 +171,19 @@ uint8_t flash_Calib_led=1; //flashes the led on calibration
 uint8_t programDigipots_FLAG = 0; //when it is high program digipots.
 uint8_t STEPS_DIGIPOT = 25;  //digipots will be program will a step of 50.
 /********************************************************/
-uint16_t adc_fft=0,adc_heel=0;
+//uint16_t adc_fft=0,adc_heel=0;
 typedef struct calibration{
 	float gain; 
     uint32_t offset_w,offset_nw;
+	uint16_t adc;
 }calib;
 calib s1,s2;
-
+#define CALIBRATION_WITHOUT_WEIGHT 
 enum mode {
 	FFT_TYPE=0,
 	HEEL_TYPE
 };
-void calibrate_load_cell(calib *sensor, uint16_t *adc, uint8_t type);
+void calibrate_load_cell(calib *sensor, uint8_t type);
 /***********************************************************************/
 
 
@@ -197,6 +198,8 @@ int main (void)
   char name[32];
   int count = 0;
 	
+	memset (&s1,0,sizeof(s1));
+	memset (&s1,0,sizeof(s2));
 	enableFIQ();
 	Initialize();
 	
@@ -277,7 +280,8 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 			if ((ADxCR == 0xE0034000) && (mask == 8)) {
 				//heel_weight = (float)((value - 2.44)/1.1);    	
 				//heel_weight =  heel_weight / 4.0; 			
-				adc_heel = value;
+				//adc_heel = value;
+				s2.adc=value;
 				if (heel_weight > 0.0 ){	
 					ftoa( heel_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;    									
@@ -294,7 +298,8 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 			else if ((ADxCR == 0xE0034000) && (mask == 4)){
 				//fft_weight = (float)((value - 6)/0.71); 	
 				//fft_weight = fft_weight/4.0;
-				adc_fft = value; 
+				//adc_fft = value; 
+				s1.adc=value;
 				if (fft_weight > 0.0){
 					ftoa( fft_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;	
@@ -1080,11 +1085,6 @@ int j;
 		if (programDigipots_FLAG == 1){
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			uart0_SendString ("\r\nsno of switch pressed="); uart0_SendChar (swHighCount+48);
-			//calibrating fft
-			uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-			calibrate_load_cell(&s1, &adc_fft, FFT_TYPE);
-			uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-			calibrate_load_cell(&s2, &adc_heel,HEEL_TYPE);
 			
 			/* Read switch count here 
 			 * Check heel and fft here
@@ -1093,46 +1093,31 @@ int j;
 			 * Flash LED...
 			 * Heel Weight 
 			 */
-			if (heel_weight > 0.00){
-				delay_ms(1);
 				switch (swHighCount){
 					case 1:
 						uart0_SendString ("\r\n HEEL: Pressed 1 time."); 
+						uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+						calibrate_load_cell(&s1, FFT_TYPE);
+						uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+						calibrate_load_cell(&s2,HEEL_TYPE);
 						break;
 					case 2:
 						uart0_SendString ("\r\n HEEL: Pressed 2 time."); 
+						uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+						calibrate_load_cell(&s1, FFT_TYPE);
+						uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+						calibrate_load_cell(&s2, HEEL_TYPE);
 						break;
 					case 3: 
-						uart0_SendString ("\r\n HEEL: Pressed 3 time."); 
+						uart0_SendString ("\r\n HEEL: Pressed 3 time.");
+						uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+						calibrate_load_cell(&s1,FFT_TYPE);
+						uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+						calibrate_load_cell(&s2,HEEL_TYPE); 
 						break;
 					default:
 						break;
 				}
-			}else{
-				uart0_SendString ("\r\nKindly put weight before calibrating as current heel weight is zero...."); 
-			}
-			
-			/* Handle Calibration of Fore-foot */
-			if (fft_weight > 0.00){
-				switch (swHighCount){
-					case 1:
-						uart0_SendString ("\r\n FFT: Pressed 1 time."); 
-						/* Program Digipots OR Analog Pots here*/
-						break;
-					case 2:
-						uart0_SendString ("\r\n FFT: Pressed 2 time."); 
-						/* Program Digipots OR Analog Pots here*/
-						break;
-					case 3: 
-						uart0_SendString ("\r\n FFT: Pressed 3 time."); 
-						/* Program Digipots OR Analog Pots here*/
-						break;
-					default:
-						break;
-				}
-			}else{
-				uart0_SendString ("\r\nKindly put weight before calibrating as current FFT weight is zero...."); 
-			}
 			// calibration completed
 			calibrationModeFLAG = 0;
 			programDigipots_FLAG =0;
@@ -1457,7 +1442,7 @@ void flash_CalibLED(void){
 * Calibrate Load Cell Heel or FFT
 * @ adc: ADC value of heel or fft
 */
-void calibrate_load_cell(calib *sensor, uint16_t *adc, uint8_t type){
+void calibrate_load_cell(calib *sensor, uint8_t type){
 	uint32_t cnt=0, avg_adc=0;
 	float kg=0.00;
 	char printbuf[30];
@@ -1470,8 +1455,8 @@ void calibrate_load_cell(calib *sensor, uint16_t *adc, uint8_t type){
 			cnt=0;
 			break;
 		}else{
-			uart0_SendString ("\r\nadc= ");	intToStr(*adc, printbuf, 3);	uart0_SendString (printbuf);
-			sensor->offset_nw += *adc;			
+			uart0_SendString ("\r\nadc= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
+			sensor->offset_nw += sensor->adc;			
 			cnt++;
 			delay_ms(100);
 		}
@@ -1491,15 +1476,15 @@ void calibrate_load_cell(calib *sensor, uint16_t *adc, uint8_t type){
 			cnt=0;
 			break;
 		}else{
-			uart0_SendString ("\r\nadc= ");	intToStr(*adc, printbuf, 3);	uart0_SendString (printbuf);
-			uart0_SendString ("\r\nadc_fft= ");	intToStr(adc_fft, printbuf, 3);	uart0_SendString (printbuf);
-			sensor->offset_w += *adc;
+			uart0_SendString ("\r\nadc= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
+			uart0_SendString ("\r\nadc_fft= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
+			sensor->offset_w += sensor->adc;
 			cnt++;
 			delay_ms(100);
 		}	
 	}
 	while(1){
-		kg = (sensor->gain) * (*adc - (sensor->offset_nw))/1000.0;
+		kg = (sensor->gain) * (sensor->adc - (sensor->offset_nw))/1000.0;
 		uart0_SendString ("\r\n");	intToStr(kg, printbuf, 3);	uart0_SendString (printbuf);
 		
 		delay_ms(250);
