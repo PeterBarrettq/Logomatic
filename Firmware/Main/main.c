@@ -178,7 +178,7 @@ typedef struct calibration{
 	uint16_t adc;
 }calib;
 calib s1,s2;
-#define CALIBRATION_WITHOUT_WEIGHT 
+#define METHOD_1
 enum mode {
 	FFT_TYPE=0,
 	HEEL_TYPE
@@ -277,11 +277,15 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 		     * AD (Control Register Address), ADOCR = E0034000 , AD1CR = E0060000	
 			 * ADxCR (0xE0034000) is the peripheral address 
 			 */
-			if ((ADxCR == 0xE0034000) && (mask == 8)) {
-				//heel_weight = (float)((value - 2.44)/1.1);    	
-				//heel_weight =  heel_weight / 4.0; 			
+			if ((ADxCR == 0xE0034000) && (mask == 8)) {			
 				//adc_heel = value;
+#ifdef METHOD_1
 				s2.adc=value;
+				heel_weight = (s2.gain) * (s2.adc - (s2.offset_nw))/1000.0;
+#else
+				heel_weight = (float)((s2.adc - 2.44)/1.1);    	
+				heel_weight =  heel_weight / 4.0; 
+#endif 
 				if (heel_weight > 0.0 ){	
 					ftoa( heel_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;    									
@@ -296,10 +300,13 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 			Gather value of A0.2 (FFT WEIGHT) 
 			*/
 			else if ((ADxCR == 0xE0034000) && (mask == 4)){
-				//fft_weight = (float)((value - 6)/0.71); 	
-				//fft_weight = fft_weight/4.0;
-				//adc_fft = value; 
+#ifdef METHOD_1
 				s1.adc=value;
+				fft_weight = (s1.gain) * (s1.adc - (s1.offset_nw))/1000.0;
+#else
+				fft_weight = (float)((value - 6)/0.71); 	
+				fft_weight = fft_weight/4.0;
+#endif
 				if (fft_weight > 0.0){
 					ftoa( fft_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;	
@@ -313,7 +320,6 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				/*
 				 *	Send Data on Zigbee 
 				 */
-				 
 				//Gather total weight for average
 				total_WeightTemp = (float)(heel_weight + fft_weight);
 				total_WeightTemp = total_WeightTemp ;      //this weight total sent by uart to control unit.has to be incorporated				
@@ -404,8 +410,8 @@ static void MODE2ISR(void){
 			
 			xbee_cnt = 0;
 			 /* Send Data through Xbee */
-			//uart0_SendChar(weight_Total);       
-			//uart0_SendChar('\n');
+			uart0_SendChar(weight_Total);       
+			uart0_SendChar('\n');
 			sleep_xbee(); //sleep the xbee.
 		}
 		/*CASE 2:Wake up xbee for sending the data*/ 
