@@ -127,11 +127,6 @@ void fat_initialize(void);
 void reverse(char* str, int len) ;
 int intToStr(int x, char str[], int d) ;
 void ftoa(float n, char* res, int afterpoint) ;
-
-
-
-
-
 /******************************************************/
 void clear_gpio(uint32_t pin);
 void set_gpio (uint32_t pin);
@@ -151,7 +146,6 @@ void SPI1_Init (void);
 void SPI1_Write(uint8_t data);
 void programHeel_DIGIPOTS(uint8_t steps);
 void programFFT_DIGIPOTS(uint8_t steps);
-
 
 // XBEE MACRO AND VARIABLES
 /*********************************************************/
@@ -177,8 +171,19 @@ uint8_t flash_Calib_led=1; //flashes the led on calibration
 uint8_t programDigipots_FLAG = 0; //when it is high program digipots.
 uint8_t STEPS_DIGIPOT = 25;  //digipots will be program will a step of 50.
 /********************************************************/
-uint16_t adc_fft=0;
-void calibrate_load_cell(uint16_t *adc);
+uint16_t adc_fft=0,adc_heel=0;
+typedef struct calibration{
+	float gain; 
+    uint32_t offset_w,offset_nw;
+}calib;
+calib s1,s2;
+
+enum mode {
+	FFT_TYPE=0,
+	HEEL_TYPE
+};
+void calibrate_load_cell(calib *sensor, uint16_t *adc, uint8_t type);
+/***********************************************************************/
 
 
 /*******************************************************
@@ -264,16 +269,15 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 	  char* p = q + ind;
 	  if(asc == 'Y') {
 			int NoOfBytes=0;
-			
 			/* 
 			  * Gather value of A0.1 (HEEL WEIGHT) 
 		     * AD (Control Register Address), ADOCR = E0034000 , AD1CR = E0060000	
 			 * ADxCR (0xE0034000) is the peripheral address 
 			 */
 			if ((ADxCR == 0xE0034000) && (mask == 8)) {
-				heel_weight = (float)((value - 2.44)/1.1);    	
-				heel_weight =  heel_weight / 4.0; 			
-				
+				//heel_weight = (float)((value - 2.44)/1.1);    	
+				//heel_weight =  heel_weight / 4.0; 			
+				adc_heel = value;
 				if (heel_weight > 0.0 ){	
 					ftoa( heel_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;    									
@@ -290,9 +294,7 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 			else if ((ADxCR == 0xE0034000) && (mask == 4)){
 				//fft_weight = (float)((value - 6)/0.71); 	
 				//fft_weight = fft_weight/4.0;
-				
 				adc_fft = value; 
-				
 				if (fft_weight > 0.0){
 					ftoa( fft_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;	
@@ -1079,8 +1081,10 @@ int j;
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			uart0_SendString ("\r\nsno of switch pressed="); uart0_SendChar (swHighCount+48);
 			//calibrating fft
-			calibrate_load_cell(&adc_fft);
-
+			uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+			calibrate_load_cell(&s1, &adc_fft, FFT_TYPE);
+			uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+			calibrate_load_cell(&s2, &adc_heel,HEEL_TYPE);
 			
 			/* Read switch count here 
 			 * Check heel and fft here
@@ -1453,23 +1457,21 @@ void flash_CalibLED(void){
 * Calibrate Load Cell Heel or FFT
 * @ adc: ADC value of heel or fft
 */
-void calibrate_load_cell(uint16_t *adc){
-	uint32_t cnt=0,offset_w=0,offset_nw=0,avg_adc=0;
-	float gain=0.0, kg=0.00;
+void calibrate_load_cell(calib *sensor, uint16_t *adc, uint8_t type){
+	uint32_t cnt=0, avg_adc=0;
+	float kg=0.00;
 	char printbuf[30];
-	
-	uart0_SendString ("\r\n Don't Put the weight on sensor");
 	delay_ms(6000);
 	
 	while (1){
 		if (cnt>10){
-			uart0_SendString ("\r\n\r\noffset= ");	intToStr(offset_nw, printbuf, 1);	uart0_SendString (printbuf);
-			offset_nw/=10;
+			uart0_SendString ("\r\n\r\noffset= ");	intToStr(sensor->offset_nw, printbuf, 1);	uart0_SendString (printbuf);
+			sensor->offset_nw/=10;
 			cnt=0;
 			break;
 		}else{
-			uart0_SendString ("\r\nadc= ");	intToStr(*adc, printbuf, 1);	uart0_SendString (printbuf);
-			offset_nw += *adc;
+			uart0_SendString ("\r\nadc= ");	intToStr(*adc, printbuf, 3);	uart0_SendString (printbuf);
+			sensor->offset_nw += *adc;			
 			cnt++;
 			delay_ms(100);
 		}
@@ -1480,25 +1482,33 @@ void calibrate_load_cell(uint16_t *adc){
 	delay_ms(6000);
 	while (1){
 		if (cnt>10){
-			avg_adc = offset_w/10;
-			uart0_SendString ("\r\n\r\navg_adc= ");	intToStr(avg_adc, printbuf, 1);	uart0_SendString (printbuf);
-			gain = 5000.0/(avg_adc-offset_nw);
-			uart0_SendString ("\r\n\r\ngain= ");	ftoa(gain, printbuf, 3);	uart0_SendString (printbuf);
+			avg_adc = (sensor->offset_w)/10;
+			uart0_SendString ("\r\n\r\navg_adc= ");intToStr(avg_adc, printbuf, 1);		uart0_SendString (printbuf);
+			
+			sensor->gain = 5000.0/(avg_adc-(sensor->offset_nw));
+			uart0_SendString ("\r\n\r\ngain= ");	ftoa(sensor->gain, printbuf, 3);	uart0_SendString (printbuf);
+			
 			cnt=0;
 			break;
 		}else{
-			uart0_SendString ("\r\nadc_fft= ");	intToStr(*adc, printbuf, 1);	uart0_SendString (printbuf);
-			offset_w += *adc;
+			uart0_SendString ("\r\nadc= ");	intToStr(*adc, printbuf, 3);	uart0_SendString (printbuf);
+			uart0_SendString ("\r\nadc_fft= ");	intToStr(adc_fft, printbuf, 3);	uart0_SendString (printbuf);
+			sensor->offset_w += *adc;
 			cnt++;
 			delay_ms(100);
 		}	
 	}
 	while(1){
-		kg = gain * (*adc - offset_nw);
-		uart0_SendString ("\r\ngram = ");	ftoa(kg, printbuf, 1);	uart0_SendString (printbuf);
+		kg = (sensor->gain) * (*adc - (sensor->offset_nw))/1000.0;
+		uart0_SendString ("\r\n");	intToStr(kg, printbuf, 3);	uart0_SendString (printbuf);
+		
 		delay_ms(250);
+		cnt++;
+		if (cnt>5){
+			break;
+		}
+		
 	}
-
 }
 
 /*
