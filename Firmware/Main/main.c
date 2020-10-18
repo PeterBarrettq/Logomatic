@@ -171,7 +171,6 @@ uint8_t flash_Calib_led=1; //flashes the led on calibration
 uint8_t programDigipots_FLAG = 0; //when it is high program digipots.
 uint8_t STEPS_DIGIPOT = 25;  //digipots will be program will a step of 50.
 /********************************************************/
-//uint16_t adc_fft=0,adc_heel=0;
 typedef struct calibration{
 	float gain; 
     uint32_t offset_w,offset_nw;
@@ -410,8 +409,10 @@ static void MODE2ISR(void){
 			
 			xbee_cnt = 0;
 			 /* Send Data through Xbee */
-			uart0_SendChar(weight_Total);       
-			uart0_SendChar('\n');
+			if (calibrationModeFLAG == 0){
+				uart0_SendChar(weight_Total);       
+				uart0_SendChar('\n');
+			}
 			sleep_xbee(); //sleep the xbee.
 		}
 		/*CASE 2:Wake up xbee for sending the data*/ 
@@ -1450,14 +1451,13 @@ void flash_CalibLED(void){
 */
 void calibrate_load_cell(calib *sensor, uint8_t type){
 	uint32_t cnt=0, avg_adc=0;
-	float kg=0.00;
 	char printbuf[30];
 	delay_ms(6000);
 	
 	while (1){
-		if (cnt>10){
+		if (cnt>20){
 			uart0_SendString ("\r\n\r\noffset= ");	intToStr(sensor->offset_nw, printbuf, 1);	uart0_SendString (printbuf);
-			sensor->offset_nw/=10;
+			sensor->offset_nw/=20;
 			cnt=0;
 			break;
 		}else{
@@ -1469,79 +1469,23 @@ void calibrate_load_cell(calib *sensor, uint8_t type){
 		//uart0_SendString ("\r\nHeel Value= ");	ftoa (heel_weight, printbuf, 3);	uart0_SendString (printbuf);
 		//uart0_SendString ("\t\tFFT Value= "); 	ftoa (fft_weight, printbuf, 3);		uart0_SendString (printbuf);
 	}
-	uart0_SendString ("\r\n Put the 5-Kg weight on sensor");
+	uart0_SendString ("\r\n Put the 10-Kg weight on sensor");
 	delay_ms(6000);
 	while (1){
-		if (cnt>10){
-			avg_adc = (sensor->offset_w)/10;
+		if (cnt>20){
+			avg_adc = (sensor->offset_w)/20;
 			uart0_SendString ("\r\n\r\navg_adc= ");intToStr(avg_adc, printbuf, 1);		uart0_SendString (printbuf);
 			
-			sensor->gain = 5000.0/(avg_adc-(sensor->offset_nw));
+			sensor->gain = 10000.0/(avg_adc-(sensor->offset_nw));
 			uart0_SendString ("\r\n\r\ngain= ");	ftoa(sensor->gain, printbuf, 3);	uart0_SendString (printbuf);
 			
 			cnt=0;
 			break;
 		}else{
 			uart0_SendString ("\r\nadc= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
-			uart0_SendString ("\r\nadc_fft= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
 			sensor->offset_w += sensor->adc;
 			cnt++;
 			delay_ms(100);
 		}	
 	}
-	while(1){
-		kg = (sensor->gain) * (sensor->adc - (sensor->offset_nw))/1000.0;
-		uart0_SendString ("\r\n");	intToStr(kg, printbuf, 3);	uart0_SendString (printbuf);
-		
-		delay_ms(250);
-		cnt++;
-		if (cnt>5){
-			break;
-		}
-		
-	}
 }
-
-/*
-uint32_t cnt_fft=0,offset_w=0,offset_nw=0,avg_adc=0;
-float gain=0.0, kg_fft=0.00;
-			uart0_SendString ("\r\n Don't Put the weight on fft");
-			delay_ms(6000);
-			while (1){
-				if (cnt_fft>6){
-					uart0_SendString ("\r\n\r\noffset= ");	intToStr(offset_nw, printbuf, 1);	uart0_SendString (printbuf);
-					offset_nw/=6;
-					cnt_fft=0;
-					break;
-				}else{
-					uart0_SendString ("\r\nadc_fft= ");	intToStr(adc_fft, printbuf, 1);	uart0_SendString (printbuf);
-					offset_nw += adc_fft;
-					cnt_fft++;
-					delay_ms(100);
-				}
-				//uart0_SendString ("\r\nHeel Value= ");	ftoa (heel_weight, printbuf, 3);	uart0_SendString (printbuf);
-				//uart0_SendString ("\t\tFFT Value= "); 	ftoa (fft_weight, printbuf, 3);		uart0_SendString (printbuf);
-			}
-			uart0_SendString ("\r\n Put the 5-Kg weight on fft");
-			delay_ms(6000);
-			while (1){
-				if (cnt_fft>10){
-					avg_adc = offset_w/10;
-					uart0_SendString ("\r\n\r\navg_adc= ");	intToStr(avg_adc, printbuf, 1);	uart0_SendString (printbuf);
-					gain = 5000.0/(avg_adc-offset_nw);
-					uart0_SendString ("\r\n\r\ngain= ");	ftoa(gain, printbuf, 3);	uart0_SendString (printbuf);
-					cnt_fft=0;
-					break;
-				}else{
-					uart0_SendString ("\r\nadc_fft= ");	intToStr(adc_fft, printbuf, 1);	uart0_SendString (printbuf);
-					offset_w += adc_fft;
-					cnt_fft++;
-					delay_ms(100);
-				}	
-			}
-			while(1){
-				kg_fft = gain * (adc_fft - offset_nw)/1000.0;
-				uart0_SendString ("\r\ngram_fft= ");	intToStr(kg_fft, printbuf, 1);	uart0_SendString (printbuf);
-				delay_ms(250);
-			}
-*/
