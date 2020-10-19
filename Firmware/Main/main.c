@@ -187,7 +187,8 @@ enum mode {
 	FFT_TYPE=0,
 	HEEL_TYPE
 };
-void calibrate_load_cell(calib *sensor, uint8_t type);
+uint8_t verbose = 1;
+void calibrate_load_cell(calib *sensor, uint8_t type, float weight);
 void write_sd_card(float gain_fft, float gain_heel);
 void calib_init(void);
 /***********************************************************************/
@@ -201,18 +202,20 @@ void calib_init(void);
 int main (void)
 {
   int i;
-  char name[32],filename[32];
+  char filename[32];
+#if 0
   int count = 0, cnt=0;
-	
+  char name[32];
+#endif
 	memset (&s1,0,sizeof(s1));
 	memset (&s1,0,sizeof(s2));
 	enableFIQ();
 	Initialize();
 	
-	//uart0 is used for xbee and no uart interrupt.
+	//uart0 is used for XBee and no UART interrupt.
 	setup_uart0(9600, 0);
 	
-	//initializing spi for digipots
+	//initializing SPI for Digipots
 	SPI1_Init();
 
 	fat_initialize();  
@@ -275,7 +278,6 @@ int main (void)
 	cfg = root_open_new(filename);
 	sd_raw_sync();
 #endif
-	cnt = 1;
 	string_printf(filename,"CALIB02.txt");
 	if(root_file_exists(filename)){
 		uart0_SendString ("\r\nFile Exist.");
@@ -1146,26 +1148,26 @@ int j;
 			switch (swHighCount){
 				case 1:
 					uart0_SendString ("\r\n HEEL: Pressed 1 time.");
-					uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-					calibrate_load_cell(&s1, FFT_TYPE);
-					uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-					calibrate_load_cell(&s2,HEEL_TYPE);
+					uart0_SendString ("\r\n Calibration Started for FFT, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s1, FFT_TYPE,10.0);
+					uart0_SendString ("\r\n Calibration Started for Heel, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s2,HEEL_TYPE,10.0);
 					write_sd_card(s1.gain, s2.gain);
 					break;
 				case 2:
 					uart0_SendString ("\r\n HEEL: Pressed 2 time.");
-					uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-					calibrate_load_cell(&s1, FFT_TYPE);
-					uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-					calibrate_load_cell(&s2, HEEL_TYPE);
+					uart0_SendString ("\r\n Calibration Started for FFT, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s1, FFT_TYPE,20.0);
+					uart0_SendString ("\r\n Calibration Started for Heel, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s2, HEEL_TYPE,20.0);
 					write_sd_card(s1.gain, s2.gain);
 					break;
 				case 3:
 					uart0_SendString ("\r\n HEEL: Pressed 3 time.");
-					uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-					calibrate_load_cell(&s1,FFT_TYPE);
-					uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-					calibrate_load_cell(&s2,HEEL_TYPE);
+					uart0_SendString ("\r\n Calibration Started for FFT, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s1,FFT_TYPE,30.0);
+					uart0_SendString ("\r\n Calibration Started for Heel, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s2,HEEL_TYPE,30.0);
 					write_sd_card(s1.gain, s2.gain);
 					break;
 				default:
@@ -1178,7 +1180,32 @@ int j;
 	}
 	/*Normal Condition*/
 	else{
-#if 0
+#if 1
+		  	if (verbose == 1){
+			    char name[32];
+			  	int count = 0;
+				count++;  //BHW TODO: this makes the count start from 1, not 0 to match docs
+				string_printf(name,"LOG%02d.txt",count);
+				while(root_file_exists(name))
+				{
+					count++;
+					if(count == 250){
+						uart0_SendString("Got count = 250 \n\r");
+						  while(1){
+								stat(0,ON);
+								stat(1,ON);
+								delay_ms(1000);
+								stat(0,OFF);
+								stat(1,OFF);
+								delay_ms(1000);
+						  }
+					}
+					string_printf(name,"LOG%02d.txt",count);
+				}
+				handle = root_open_new(name);
+				sd_raw_sync();
+				verbose = 0;
+		  	}
 			if(log_array1 == 1){
 				stat(0,ON);
 				/* print the data on the console before saving in sd-card */
@@ -1497,34 +1524,19 @@ void flash_CalibLED(void){
 * Calibrate Load Cell Heel or FFT
 * @ adc: ADC value of heel or fft
 */
-void calibrate_load_cell(calib *sensor, uint8_t type){
+void calibrate_load_cell(calib *sensor, uint8_t type, float weight){
 	uint32_t cnt=0, avg_adc=0;
 	char printbuf[30];
-	delay_ms(6000);
 	
-	while (1){
-		if (cnt>20){
-			uart0_SendString ("\r\n\r\nOffset= ");	intToStr(sensor->offset_nw, printbuf, 1);	uart0_SendString (printbuf);
-			sensor->offset_nw/=20;
-			cnt=0;
-			break;
-		}else{
-			uart0_SendString ("\r\nADC= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
-			sensor->offset_nw += sensor->adc;			
-			cnt++;
-			delay_ms(100);
-		}
-		//uart0_SendString ("\r\nHeel Value= ");	ftoa (heel_weight, printbuf, 3);	uart0_SendString (printbuf);
-		//uart0_SendString ("\t\tFFT Value= "); 	ftoa (fft_weight, printbuf, 3);		uart0_SendString (printbuf);
-	}
-	uart0_SendString ("\r\n Put the 10-KG weight on sensor");
+	sensor->offset_nw = 0;
+	uart0_SendString ("\r\n Put the ");ftoa(weight, printbuf,3);uart0_SendString (printbuf);uart0_SendString(" weight on sensor");
 	delay_ms(6000);
 	while (1){
 		if (cnt>20){
 			avg_adc = (sensor->offset_w)/20;
 			uart0_SendString ("\r\n\r\navg_adc= ");intToStr(avg_adc, printbuf, 3);		uart0_SendString (printbuf);
 			
-			sensor->gain = 10000.0/(avg_adc-(sensor->offset_nw));
+			sensor->gain = (weight*1000.0)/(avg_adc-(sensor->offset_nw));
 			uart0_SendString ("\r\n\r\nGain= ");	ftoa(sensor->gain, printbuf, 1);	uart0_SendString (printbuf);
 			cnt=0;
 			break;
@@ -1535,7 +1547,7 @@ void calibrate_load_cell(calib *sensor, uint8_t type){
 			delay_ms(100);
 		}	
 	}
-	uart0_SendString ("\r\n Release the 10-KG weight on sensor");
+	uart0_SendString ("\r\n Release weight from the sensor");
 }
 
 /* Function writes data in sd-card
@@ -1581,6 +1593,7 @@ void write_sd_card(float gain_fft, float gain_heel){
 		uart0_SendString ("\r\nUnable to write");
 	}
 	sd_raw_sync();
+    fat_close_file(cfg);
 }
 
 /*Read the calibration parameters*/
