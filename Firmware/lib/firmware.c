@@ -40,7 +40,7 @@
                            ( ((x-TRICKYSECT ) >> TRICKYLSB) +TRICKYNUM) : \
                            ( ((x-STARTSECTOR) >> STARTLSB ) +STARTNUM ) )
 
-#define STARTADDR  0x00010000
+#define STARTADDR  		 0x00010000
 #define ERASE_SECT_START 9
 #define ERASE_SECT_STOP  26
 
@@ -71,7 +71,7 @@ char readbuf[READBUFSIZE];
  */
 
 /* End FPC */
-
+/* These is write, erase and read command in */
 int load_fw(char* filename)
 {
     struct fat_file_struct * fd;

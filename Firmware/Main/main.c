@@ -32,6 +32,7 @@
 #include "sd_raw.h"
 #include "string_printf.h"
 #include "delay.h"
+#include <string.h>
 #include <stdlib.h>  /* strtox */
 #include <errno.h>   /* error numbers */
 
@@ -73,8 +74,9 @@ char get_frame = 0;
 
 signed int stringSize;
 struct fat_file_struct* handle;
-struct fat_file_struct * fd;
-struct fat_file_struct * cfg;
+struct fat_file_struct* fd;
+struct fat_file_struct* cfg;
+struct fat_file_struct* cfg1;
 char stringBuf[256];
 
 // Default Settings
@@ -200,7 +202,7 @@ int main (void)
 {
   int i;
   char name[32],filename[32];
-  int count = 0;
+  int count = 0, cnt=0;
 	
 	memset (&s1,0,sizeof(s1));
 	memset (&s1,0,sizeof(s2));
@@ -229,9 +231,9 @@ int main (void)
 	}
 	Log_init();
 	calib_init();
+#if 0
 	count++;  //BHW TODO: this makes the count start from 1, not 0 to match docs
 	string_printf(name,"LOG%02d.txt",count);
-			
 	while(root_file_exists(name))
 	{
 		count++;
@@ -250,7 +252,43 @@ int main (void)
 	}
 	handle = root_open_new(name);
 	sd_raw_sync();
-	
+#endif
+
+#if 0
+	cnt++;
+	string_printf(filename,"CALIB%02d.txt",cnt);
+	while(root_file_exists(filename))
+	{
+		cnt++;
+		if(cnt == 250){
+			  while(1){
+					stat(0,ON);
+					stat(1,ON);
+					delay_ms(1000);
+					stat(0,OFF);
+					stat(1,OFF);
+					delay_ms(1000);
+			  }
+		}
+		string_printf(filename,"CALIB%02d.txt",cnt);
+	}
+	cfg = root_open_new(filename);
+	sd_raw_sync();
+#endif
+	cnt = 1;
+	string_printf(filename,"CALIB02.txt");
+	if(root_file_exists(filename)){
+		uart0_SendString ("\r\nFile Exist.");
+		cfg = root_open(filename);
+		sd_raw_sync();
+		//for (int g=0; g<10; g++){
+			//write_sd_card(200.0, 100.0);
+			//delay_ms(1000);
+		//}
+	}else{
+		uart0_SendString ("\r\nFile don't exist.");
+	}
+
 	if(mode==0){
 		mode_0(); 
 	}
@@ -309,7 +347,7 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				s1.adc=value;
 				fft_weight = (s1.gain) * (s1.adc - (s1.offset_nw))/1000.0;
 #else
-				fft_weight = (float)((value - 6)/0.71); 	
+				fft_weight = (float)((value-6)/0.71);
 				fft_weight = fft_weight/4.0;
 #endif
 				if (fft_weight > 0.0){
@@ -1098,12 +1136,6 @@ int j;
 		if (programDigipots_FLAG == 1){
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			uart0_SendString ("\r\nsno of switch pressed="); uart0_SendChar (swHighCount+48);
-			
-
-			for (int n=0;n<10;n++){
-				delay_ms(4000);
-				write_sd_card(200.0, 100.0);
-			}
 			/* Read switch count here 
 			 * Check heel and fft here
 			 * Check if not equal to zero then continue
@@ -1111,34 +1143,34 @@ int j;
 			 * Flash LED...
 			 * Heel Weight 
 			 */
-				switch (swHighCount){
-					case 1:
-						uart0_SendString ("\r\n HEEL: Pressed 1 time."); 
-						uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-						calibrate_load_cell(&s1, FFT_TYPE);
-						uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-						calibrate_load_cell(&s2,HEEL_TYPE);
-						write_sd_card(s1.gain, s2.gain);
-						break;
-					case 2:
-						uart0_SendString ("\r\n HEEL: Pressed 2 time."); 
-						uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-						calibrate_load_cell(&s1, FFT_TYPE);
-						uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-						calibrate_load_cell(&s2, HEEL_TYPE);
-						write_sd_card(s1.gain, s2.gain);
-						break;
-					case 3: 
-						uart0_SendString ("\r\n HEEL: Pressed 3 time.");
-						uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
-						calibrate_load_cell(&s1,FFT_TYPE);
-						uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
-						calibrate_load_cell(&s2,HEEL_TYPE); 
-						write_sd_card(s1.gain, s2.gain);
-						break;
-					default:
-						break;
-				}
+			switch (swHighCount){
+				case 1:
+					uart0_SendString ("\r\n HEEL: Pressed 1 time.");
+					uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s1, FFT_TYPE);
+					uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s2,HEEL_TYPE);
+					write_sd_card(s1.gain, s2.gain);
+					break;
+				case 2:
+					uart0_SendString ("\r\n HEEL: Pressed 2 time.");
+					uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s1, FFT_TYPE);
+					uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s2, HEEL_TYPE);
+					write_sd_card(s1.gain, s2.gain);
+					break;
+				case 3:
+					uart0_SendString ("\r\n HEEL: Pressed 3 time.");
+					uart0_SendString ("\r\n Calibration Started for fft, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s1,FFT_TYPE);
+					uart0_SendString ("\r\n Calibration Started for heel, Please wait don't Put the weight on sensor");
+					calibrate_load_cell(&s2,HEEL_TYPE);
+					write_sd_card(s1.gain, s2.gain);
+					break;
+				default:
+					break;
+			}
 			// calibration completed
 			calibrationModeFLAG = 0;
 			programDigipots_FLAG =0;
@@ -1146,6 +1178,7 @@ int j;
 	}
 	/*Normal Condition*/
 	else{
+#if 0
 			if(log_array1 == 1){
 				stat(0,ON);
 				/* print the data on the console before saving in sd-card */
@@ -1207,6 +1240,7 @@ int j;
 					stat(1,OFF);
 				}
 			}
+#endif
 		}
 	}
 }
@@ -1470,12 +1504,12 @@ void calibrate_load_cell(calib *sensor, uint8_t type){
 	
 	while (1){
 		if (cnt>20){
-			uart0_SendString ("\r\n\r\noffset= ");	intToStr(sensor->offset_nw, printbuf, 1);	uart0_SendString (printbuf);
+			uart0_SendString ("\r\n\r\nOffset= ");	intToStr(sensor->offset_nw, printbuf, 1);	uart0_SendString (printbuf);
 			sensor->offset_nw/=20;
 			cnt=0;
 			break;
 		}else{
-			uart0_SendString ("\r\nadc= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
+			uart0_SendString ("\r\nADC= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
 			sensor->offset_nw += sensor->adc;			
 			cnt++;
 			delay_ms(100);
@@ -1483,7 +1517,7 @@ void calibrate_load_cell(calib *sensor, uint8_t type){
 		//uart0_SendString ("\r\nHeel Value= ");	ftoa (heel_weight, printbuf, 3);	uart0_SendString (printbuf);
 		//uart0_SendString ("\t\tFFT Value= "); 	ftoa (fft_weight, printbuf, 3);		uart0_SendString (printbuf);
 	}
-	uart0_SendString ("\r\n Put the 10-Kg weight on sensor");
+	uart0_SendString ("\r\n Put the 10-KG weight on sensor");
 	delay_ms(6000);
 	while (1){
 		if (cnt>20){
@@ -1491,16 +1525,17 @@ void calibrate_load_cell(calib *sensor, uint8_t type){
 			uart0_SendString ("\r\n\r\navg_adc= ");intToStr(avg_adc, printbuf, 3);		uart0_SendString (printbuf);
 			
 			sensor->gain = 10000.0/(avg_adc-(sensor->offset_nw));
-			uart0_SendString ("\r\n\r\ngain= ");	ftoa(sensor->gain, printbuf, 1);	uart0_SendString (printbuf);
+			uart0_SendString ("\r\n\r\nGain= ");	ftoa(sensor->gain, printbuf, 1);	uart0_SendString (printbuf);
 			cnt=0;
 			break;
 		}else{
-			uart0_SendString ("\r\nadc= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
+			uart0_SendString ("\r\nADC= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
 			sensor->offset_w += sensor->adc;
 			cnt++;
 			delay_ms(100);
 		}	
 	}
+	uart0_SendString ("\r\n Release the 10-KG weight on sensor");
 }
 
 /* Function writes data in sd-card
@@ -1508,12 +1543,15 @@ void calibrate_load_cell(calib *sensor, uint8_t type){
  * @gain_heel: gain heel value
  */
 void write_sd_card(float gain_fft, float gain_heel){
-	char buf_gain_fft[10], buf_gain_heel[10],temp[30];
-	int i=0;
+	char buf_gain_fft[25], buf_gain_heel[25],temp[30];
+	int i=0,iter=0;
 	char buffer_file[256],readbuf[256];
-	signed int buffersize;
+	signed int buffersize,len;
 	char filename[32];
+	char data[30]="load\r\n";
 
+
+#if 1
 	memset(buf_gain_heel,'0',sizeof(buf_gain_heel));
 	memset(buf_gain_fft, '0', sizeof(buf_gain_fft));
 
@@ -1527,48 +1565,29 @@ void write_sd_card(float gain_fft, float gain_heel){
 	for (i=0; temp[i]!=0;i++)	{buf_gain_heel[i] = temp[i];}
 	buf_gain_heel[5]=0;
 	
-	strcpy(buffer_file, "GAIN FFT = ");
+	strcpy(buffer_file, "GAIN FFT=");
 	strcat(buffer_file, buf_gain_fft);
 	strcat(buffer_file, "\r\n");
-	strcat(buffer_file, "GAIN HEEL = ");
+	strcat(buffer_file, "GAIN HEEL=");
 	strcat(buffer_file, buf_gain_heel);
 	strcat(buffer_file, "\r\n");
-
-	uart0_SendString("\r\n->SD-Card Data\r\n");uart0_SendString(buffer_file);
-
-	string_printf(filename,"CALIB.txt");
-	buffersize = strlen(buffer_file);
-#if 0
-	if(root_file_exists(filename)){
-		cfg = root_open(filename);
-		sd_raw_sync();
-	}
+	uart0_SendString("\r\n->Writing Data\r\n");uart0_SendString(buffer_file);
 #endif
-	if (root_file_exists(filename)){
-		cfg = root_open(filename);
-		if(fat_write_file(cfg,(unsigned char *)buffer_file, buffersize)<0){
-			uart0_SendString("Successfully written\r\n");
-		}else{
-			uart0_SendString("Unable to write\r\n");
-		}
-		fat_close_file(cfg);
-	}
 
-	delay_ms(1000);
-	if(root_file_exists(filename)){
-		cfg = root_open(filename);
-		int len = fat_read_file(cfg, (unsigned char *)readbuf, 512);
-		readbuf[len] = '\0';
-		uart0_SendString("Read buffer =");uart0_SendString (readbuf);
-		fat_close_file(cfg);
+	if (fat_write_file(cfg,(unsigned char *)buffer_file, strlen(buffer_file)) > 0){
+		uart0_SendString ("\r\nSuccessfully written");
 	}
+	else{
+		uart0_SendString ("\r\nUnable to write");
+	}
+	sd_raw_sync();
 }
 
 /*Read the calibration parameters*/
 void calib_init(void){
-	int x, mark = 0, ind = 0;
+	int x, mark = 0, ind = 0, i=0;
 	char temp;
-	char gain_buf_fft[10],gain_buf_heel[10],temp_buf[30];
+	char gain_buf_fft[25],gain_buf_heel[25],temp_buf[30];
 	char* errCheck;
 	float d=0.00;
 	char filename[32];
@@ -1578,16 +1597,19 @@ void calib_init(void){
 	memset (gain_buf_heel,'0',sizeof(gain_buf_heel));
 	memset (gain_buf_fft, '0',sizeof(gain_buf_fft));
 
-	string_printf(filename,"CALIB.txt");
+	string_printf(filename,"CALIB02.txt");
 	if(root_file_exists(filename)){
 	    cfg = root_open(filename);
 	    buffersize = fat_read_file(cfg, (unsigned char *)buffer_file, 512);
 	    buffer_file[buffersize]='\0';
 	    fat_close_file(cfg);
-	}else{
+	}
+	else{
 		cfg = root_open_new(filename);
-		if (cfg ==0){
-		  while(1){
+		if (cfg ==0)
+		{
+		  while(1)
+		  {
 			stat(0,ON);
 			delay_ms(50);
 			stat(0,OFF);
@@ -1596,47 +1618,51 @@ void calib_init(void){
 			stat(1,OFF);
 		  }
 		}
-		strcpy(buffer_file, "GAIN FFT = 00000\r\nGAIN HEEL = 00000\r\n");
+		strcpy(buffer_file, "GAIN FFT=00000\r\nGAIN HEEL=00000\r\n");
 		buffersize = strlen(buffer_file);
 		uart0_SendString ("\r\nWriting data in Calib.txt: ");uart0_SendString(buffer_file);
 		fat_write_file(cfg, (unsigned char*)buffer_file, buffersize);
 		sd_raw_sync();
 	}
-	//read the configuration in logcon.txt
-	for(x = 0; x < buffersize; x++)
-	{
-		temp = buffer_file[x];
-		if(temp == 10)
-		{
-		  mark = x;
-		  ind++;
-		  if (ind == 1){
-				gain_buf_fft[0]= buffer_file[mark-6];
-				gain_buf_fft[1]= buffer_file[mark-5];
-				gain_buf_fft[2]= buffer_file[mark-4];
-				gain_buf_fft[3]= buffer_file[mark-3];
-				gain_buf_fft[4]= buffer_file[mark-2];
-				gain_buf_fft[5]= 0;
 
-				uart0_SendString("\r\n->Read_Gain_fft1=");   uart0_SendString(gain_buf_fft);
-				d = strtod(gain_buf_fft, &errCheck);
-				s1.gain=d; //Save the gain of FFT
-				ftoa (d, temp_buf, 1);
-				uart0_SendString ("\r\n->Read_Gain_fft1= ");	uart0_SendString(temp_buf);
-		  }
-		  else if (ind == 2){
-				gain_buf_heel[0]= buffer_file[mark-6];
-				gain_buf_heel[1]= buffer_file[mark-5];
-				gain_buf_heel[2]= buffer_file[mark-4];
-				gain_buf_heel[3]= buffer_file[mark-3];
-				gain_buf_heel[4]= buffer_file[mark-2];
-				gain_buf_heel[5]= 0;
-				uart0_SendString("\r\n->Read_Gain_heel2="); uart0_SendString(gain_buf_heel);
-				d = strtod(gain_buf_heel, &errCheck);
-				s2.gain=d; //Save the gain of HEEL
-				ftoa (d, temp_buf, 1);
-				uart0_SendString ("\r\n->Read_Gain_fft2 = ");uart0_SendString(temp_buf);
-			}
+	for (x=0; x<buffersize; x++){
+		temp = buffer_file[x];
+		if (temp=='=')
+		{
+			  mark = x;
+			  ind++;
+			  if (ind == 1)
+			  {
+				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
+					  if(i > 9){
+						  break;
+					  }
+					  else{
+							gain_buf_fft[i]= buffer_file[mark+1+i];
+					  }
+				  }
+				  gain_buf_fft[i]= 0;
+				  uart0_SendString("\r\n->Read_Gain_fft1=");   uart0_SendString(gain_buf_fft);
+				  d = strtod(gain_buf_fft, &errCheck);
+				  s1.gain=d; //Save the gain of FFT
+				  ftoa (d, temp_buf, 1);
+				  uart0_SendString ("\r\n->Read_Gain_fft1= ");	uart0_SendString(temp_buf);
+			  }else if (ind == 2){
+				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
+						  if(i > 9){
+							  break;
+						  }
+						  else{
+							  gain_buf_heel[i]= buffer_file[mark+1+i];
+						  }
+				  }
+				  gain_buf_heel[i]= 0;
+			      uart0_SendString("\r\n->Read_Gain_heel1=");   uart0_SendString(gain_buf_heel);
+			      d = strtod(gain_buf_heel, &errCheck);
+				  s2.gain=d; //Save the gain of Heel
+				  ftoa (d, temp_buf, 1);
+				  uart0_SendString ("\r\n->Read_Gain_heel2= ");	uart0_SendString(temp_buf);
+			  }
 		}
 	}
 }
