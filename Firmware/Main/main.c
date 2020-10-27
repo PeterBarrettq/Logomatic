@@ -1180,7 +1180,7 @@ int j;
 	}
 	/*Normal Condition*/
 	else{
-#if 1
+#if 0
 		  	if (verbose == 1){
 			    char name[32];
 			  	int count = 0;
