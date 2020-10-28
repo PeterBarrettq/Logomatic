@@ -135,7 +135,7 @@ void ftoa(float n, char* res, int afterpoint) ;
 /******************************************************/
 void clear_gpio(uint32_t pin);
 void set_gpio (uint32_t pin);
-void flash_CalibLED(void);
+void flash_CalibLED(uint8_t num_flash);
 
 void sleep_xbee (void);
 void wake_xbee (void);
@@ -1117,8 +1117,6 @@ void mode_2(void){
  * This function normal routine of Logomatic
  */
 void mode_action(void){
-int j;
-
   while(1)
   {
 	/*
@@ -1127,7 +1125,7 @@ int j;
 	if (calibrationModeFLAG == 1){
 		if (flash_Calib_led == 1){
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-			flash_CalibLED();
+			flash_CalibLED(1);
 			
 			/*Enabling timer and check for switches in second capture.*/
 			timerFLAG =1;
@@ -1138,6 +1136,7 @@ int j;
 		if (programDigipots_FLAG == 1){
 			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			uart0_SendString ("\r\nsno of switch pressed="); uart0_SendChar (swHighCount+48);
+			flash_CalibLED(2);
 			/* Read switch count here 
 			 * Check heel and fft here
 			 * Check if not equal to zero then continue
@@ -1147,28 +1146,34 @@ int j;
 			 */
 			switch (swHighCount){
 				case 1:
-					uart0_SendString ("\r\n HEEL: Pressed 1 time.");
-					uart0_SendString ("\r\n Calibration Started for FFT, Please wait don't Put the weight on sensor");
+					uart0_SendString ("\r\n SW: Pressed 1 times.");
 					calibrate_load_cell(&s1, FFT_TYPE,10.0);
-					uart0_SendString ("\r\n Calibration Started for Heel, Please wait don't Put the weight on sensor");
+					flash_CalibLED(3);
+					uart0_SendString ("\r\n Wait for 6 seconds");
+					delay_ms(6000); //6s delay
 					calibrate_load_cell(&s2,HEEL_TYPE,10.0);
 					write_sd_card(s1.gain, s2.gain);
+					flash_CalibLED(4);
 					break;
 				case 2:
-					uart0_SendString ("\r\n HEEL: Pressed 2 time.");
-					uart0_SendString ("\r\n Calibration Started for FFT, Please wait don't Put the weight on sensor");
+					uart0_SendString ("\r\n SW: Pressed 2 times.");
 					calibrate_load_cell(&s1, FFT_TYPE,20.0);
-					uart0_SendString ("\r\n Calibration Started for Heel, Please wait don't Put the weight on sensor");
+					flash_CalibLED(3);
+					uart0_SendString ("\r\n Wait for 6 seconds");
+					delay_ms(6000); //6s delay
 					calibrate_load_cell(&s2, HEEL_TYPE,20.0);
 					write_sd_card(s1.gain, s2.gain);
+					flash_CalibLED(4);
 					break;
 				case 3:
-					uart0_SendString ("\r\n HEEL: Pressed 3 time.");
-					uart0_SendString ("\r\n Calibration Started for FFT, Please wait don't Put the weight on sensor");
+					uart0_SendString ("\r\n SW: Pressed 3 times.");
 					calibrate_load_cell(&s1,FFT_TYPE,30.0);
-					uart0_SendString ("\r\n Calibration Started for Heel, Please wait don't Put the weight on sensor");
+					uart0_SendString ("\r\n Wait for 6 seconds");
+					flash_CalibLED(3);
+					delay_ms(6000); //6s delay
 					calibrate_load_cell(&s2,HEEL_TYPE,30.0);
 					write_sd_card(s1.gain, s2.gain);
+					flash_CalibLED(4);
 					break;
 				default:
 					break;
@@ -1514,10 +1519,13 @@ void programFFT_DIGIPOTS(uint8_t steps){
 			delay_ms(5);
 }
 
-void flash_CalibLED(void){
-	set_gpio (1<<Calib_LED); //high
-	delay_ms(1000);
-	clear_gpio (1<<Calib_LED); //low
+void flash_CalibLED(uint8_t num_flash){
+	for (int i=0;i<num_flash;i++){
+		set_gpio (1<<Calib_LED); //high
+		delay_ms(1000);
+		clear_gpio (1<<Calib_LED); //low
+		delay_ms(1000);
+	}
 }
 
 /*
@@ -1558,7 +1566,6 @@ void write_sd_card(float gain_fft, float gain_heel){
 	char buf_gain_fft[25], buf_gain_heel[25],temp[30];
 	int i=0,iter=0;
 	char buffer_file[256],readbuf[256];
-	signed int buffersize,len;
 	char filename[32];
 	char data[30]="load\r\n";
 
