@@ -103,8 +103,8 @@ static char  ad0_1 = 'N';
 void Initialize(void);
 
 void setup_uart0(int newbaud, char want_ints);
-void uart0_SendString (char* str);
-void uart0_SendChar (char ch);
+void uart0_SendString (uint8_t en, char* str);
+void uart0_SendChar (uint8_t en, char ch);
 
 void mode_0(void);
 void mode_1(void);
@@ -133,17 +133,21 @@ void reverse(char* str, int len) ;
 int intToStr(int x, char str[], int d) ;
 void ftoa(float n, char* res, int afterpoint) ;
 /******************************************************/
+#define XBEE_TICKS  10
+#define NUM_AVERAGE 16
+#define METHOD_1
+#define ENABLE_SD_LOGS 1
+
 void clear_gpio(uint32_t pin);
 void set_gpio (uint32_t pin);
 void flash_CalibLED(uint8_t num_flash);
-
 void sleep_xbee (void);
 void wake_xbee (void);
 
 
 //SPI prototypes
 void SPI_Write(uint8_t data);
-void SPI_Init();
+void SPI_Init(void);
 char SPI_Read(void);
 
 //SPI1 prototypes
@@ -160,9 +164,8 @@ static uint8_t WeightAvg[20];
 
 int weight_Total=0;
 float heel_weight=0.0, fft_weight=0.0;
-uint8_t k=0, iter=0,total_WeightTemp=0;
-#define XBEE_TICKS  10
-#define NUM_AVERAGE 16
+uint8_t k=0, iter=0;
+uint16_t total_WeightTemp=0;
 /*********************************************************/
 uint8_t SwFlag = 0;  //flag for maintain switch high and lows
 uint8_t timerFLAG = 1; //you can start and stop timer using timerFLAG , 1 means start 0 means stop
@@ -173,8 +176,9 @@ uint8_t calibrationModeFLAG = 0; //this flag tells whether we are in calibration
 uint8_t firstCapture=1, secondCapture =0;
 uint8_t debugTemp[50]; //for printing it on uart0
 uint8_t flash_Calib_led=1; //flashes the led on calibration
-uint8_t programDigipots_FLAG = 0; //when it is high program digipots.
+uint8_t calibrateSensor_FLAG = 0; //when it is high program digipots.
 uint8_t STEPS_DIGIPOT = 25;  //digipots will be program will a step of 50.
+uint8_t DEBUG_LOGOMATIC=1;
 /********************************************************/
 typedef struct calibration{
 	float gain; 
@@ -182,13 +186,14 @@ typedef struct calibration{
 	uint16_t adc;
 }calib;
 calib s1,s2;
-#define METHOD_1
+
 enum mode {
 	FFT_TYPE=0,
 	HEEL_TYPE
 };
-uint8_t verbose = 1;
-void calibrate_load_cell(calib *sensor, uint8_t type, float weight);
+uint8_t create_log_file = 0,start_log_timer=1,savelogs=0;
+uint16_t log_enable_cnt=0;
+void calibrate_load_cell(calib *sensor, uint8_t type, float weight, char* msg);
 void write_sd_card(float gain_fft, float gain_heel);
 void calib_init(void);
 /***********************************************************************/
@@ -219,14 +224,12 @@ int main (void)
 	SPI1_Init();
 
 	fat_initialize();  
-	uart0_SendString("Hello Logomatic\n\r");
+	uart0_SendString(DEBUG_LOGOMATIC,"Hello Logomatic\n\r");
  
 	// Flash Status Lights
 	for(i = 0; i < 5; i++){
-		//set_gpio(1<<Calib_LED);
 		stat(0,ON);
 		delay_ms(50);
-		//clear_gpio(1<<Calib_LED);
 		stat(0,OFF);
 		stat(1,ON);
 		delay_ms(50);
@@ -234,61 +237,15 @@ int main (void)
 	}
 	Log_init();
 	calib_init();
-#if 0
-	count++;  //BHW TODO: this makes the count start from 1, not 0 to match docs
-	string_printf(name,"LOG%02d.txt",count);
-	while(root_file_exists(name))
-	{
-		count++;
-		if(count == 250){
-			uart0_SendString("Got count = 250 \n\r");
-			  while(1){
-					stat(0,ON);
-					stat(1,ON);
-					delay_ms(1000);
-					stat(0,OFF);
-					stat(1,OFF);
-					delay_ms(1000);
-			  }
-		}
-		string_printf(name,"LOG%02d.txt",count);
-	}
-	handle = root_open_new(name);
-	sd_raw_sync();
-#endif
-
-#if 0
-	cnt++;
-	string_printf(filename,"CALIB%02d.txt",cnt);
-	while(root_file_exists(filename))
-	{
-		cnt++;
-		if(cnt == 250){
-			  while(1){
-					stat(0,ON);
-					stat(1,ON);
-					delay_ms(1000);
-					stat(0,OFF);
-					stat(1,OFF);
-					delay_ms(1000);
-			  }
-		}
-		string_printf(filename,"CALIB%02d.txt",cnt);
-	}
-	cfg = root_open_new(filename);
-	sd_raw_sync();
-#endif
 	string_printf(filename,"CALIB02.txt");
-	if(root_file_exists(filename)){
-		uart0_SendString ("\r\nFile Exist.");
+	if(root_file_exists(filename))
+	{
+		uart0_SendString (DEBUG_LOGOMATIC,"\r\nFile Exist.");
 		cfg = root_open(filename);
 		sd_raw_sync();
-		//for (int g=0; g<10; g++){
-			//write_sd_card(200.0, 100.0);
-			//delay_ms(1000);
-		//}
-	}else{
-		uart0_SendString ("\r\nFile don't exist.");
+	}else
+	{
+		uart0_SendString (DEBUG_LOGOMATIC,"\r\nFile don't exist.");
 	}
 
 	if(mode==0){
@@ -303,7 +260,6 @@ int main (void)
 	return 0;
 }
 
-
 /*********************************************************************************
 PROCESSING OF ADC VALUES , ALGORITHM IMPLEMENTATION
 			
@@ -313,16 +269,19 @@ Moreover compose the values of total weight and takes its average before sending
 to xbee every 100ms
 **********************************************************************************/
 																								
-static inline int pushValue(char* q, int ind, int value, volatile unsigned long* ADxCR, int mask){
+static inline int pushValue(char* q, int ind, int value, volatile unsigned long* ADxCR, int mask)
+{
 	  char* p = q + ind;
-	  if(asc == 'Y') {
+	  if(asc == 'Y')
+	  {
 			int NoOfBytes=0;
 			/* 
 			  * Gather value of A0.1 (HEEL WEIGHT) 
 		     * AD (Control Register Address), ADOCR = E0034000 , AD1CR = E0060000	
 			 * ADxCR (0xE0034000) is the peripheral address 
 			 */
-			if ((ADxCR == 0xE0034000) && (mask == 8)) {			
+			if ((ADxCR == (unsigned long*)0xE0034000) && (mask == 8))
+			{
 				//adc_heel = value;
 #ifdef METHOD_1
 				s2.adc=value;
@@ -331,11 +290,13 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				heel_weight = (float)((s2.adc - 2.44)/1.1);    	
 				heel_weight =  heel_weight / 4.0; 
 #endif 
-				if (heel_weight > 0.0 ){	
+				if (heel_weight > 0.0 )
+				{
 					ftoa( heel_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;    									
 				}
-				else{
+				else
+				{
 					heel_weight = 0.0;
 					p[0]='0'; p[1]='.'; p[2]='0'; p[3]='\0';
 					NoOfBytes = strlen(p) + ind + 1;					
@@ -344,7 +305,8 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 			/*
 			Gather value of A0.2 (FFT WEIGHT) 
 			*/
-			else if ((ADxCR == 0xE0034000) && (mask == 4)){
+			else if ((ADxCR == (unsigned long*)0xE0034000) && (mask == 4))
+			{
 #ifdef METHOD_1
 				s1.adc=value;
 				fft_weight = (s1.gain) * (s1.adc - (s1.offset_nw))/1000.0;
@@ -352,64 +314,74 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				fft_weight = (float)((value-6)/0.71);
 				fft_weight = fft_weight/4.0;
 #endif
-				if (fft_weight > 0.0){
+				if (fft_weight > 0.0)
+				{
 					ftoa( fft_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;	
 				}
-				else{
+				else
+				{
 					fft_weight = 0.0;
 					p[0]='0';p[1]='.';p[2]='0';p[3]='\0';
 					NoOfBytes = strlen(p) + ind + 1;	
 				}
 								
 				/*
-				 *	Send Data on Zigbee 
+				 *	Send Data on ZigBee
 				 */
+
 				//Gather total weight for average
 				total_WeightTemp = (float)(heel_weight + fft_weight);
-				if (total_WeightTemp > 255){   //code to do with sending Total data (Heel + Fft)via UART 
+
+				//code to do with sending Total data (Heel + Fft)via UART
+				if (total_WeightTemp > 255)
+				{
 					total_WeightTemp = 255;
 				}				
 				WeightAvg[iter++] = (unsigned char)(total_WeightTemp);
 				
 				//Take average of only 16 samples....
-				if (iter > NUM_AVERAGE){
+				if (iter > NUM_AVERAGE)
+				{
 					iter = 0;
-					for (k=0; k<NUM_AVERAGE;k++){
+					for (k=0; k<NUM_AVERAGE;k++)
+					{
 						weight_Total += WeightAvg[k];
 					}
 					weight_Total = weight_Total/NUM_AVERAGE; //Divide by 16
 				}
 			}
 			//all other pins except A0.2 and A0.3				
-			else{
+			else
+			{
 				// itoa returns the number of bytes written excluding
 				// trailing '\0', hence the "+ 1"
 				NoOfBytes = itoa(value, p, 10) + ind + 1;	
 			}
 			return NoOfBytes;
 	  }
-	  else if(asc == 'N'){
+	  else if(asc == 'N')
+	  {
 			p[0] = value >> 8;
 			p[1] = value;
 			return ind + 2;
 	  }
-	  else{
+	  else
+	  {
 			return ind;
 	  }
 }
-  /******************************************************************************/
-							//get adc sample
-  /******************************************************************************/
+  /******************************************************************************
+							GET ADC SAMPLES
+   *****************************************************************************/
 
-static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsigned long* ADxDR, int mask, char adx_bit){	
-	//adx_bit tells whether adc is enabled or not.....
+static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsigned long* ADxDR, int mask, char adx_bit)
+{
 	if(adx_bit == 'Y')
 	{
-
 		int value = 0;
 		 
-		*ADxCR = 0x00020FF00 | mask; // 0000 0000 0010 0000 1111 1111 0000 0000
+		*ADxCR = 0x00020FF00 | mask;
 		*ADxCR |= 0x01000000;  // start conversion
 		
 		while((value & 0x80000000) == 0)
@@ -432,54 +404,68 @@ static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsi
 /*
  *Timer 0 ISR  (10ms Interrupt or 100 Frequency)
  */
-static void MODE2ISR(void){
+static void MODE2ISR(void)
+{
   int ind = 0;
   int j;
   char q[50];
   T0IR = 1; // reset TMR0 interrupt
   
-  for(j = 0; j < 50; j++){
+  for(j = 0; j < 50; j++)
+  {
 		q[j] = 0;
   }
 
 #define SAMPLE(X, BIT) ind = sample(q, ind, &AD##X##CR, &AD##X##DR, 1 << BIT, ad##X##_##BIT)
   
-    /*Every 100ms send the data on the xbee*/
-	if (freq == 100){
-	++xbee_cnt; 
+    /*Every 100ms send the data on the XBee*/
+	if (freq == 100)
+	{
+		++xbee_cnt;
 	
-		/*CASE 1:Send the data and put xbee in sleep mode*/
-		if (xbee_cnt > XBEE_TICKS ){
-			
+		/*CASE 1:Send the data and put XBee in sleep mode*/
+		if (xbee_cnt > XBEE_TICKS )
+		{
 			xbee_cnt = 0;
-			 /* Send Data through Xbee */
-			if (calibrationModeFLAG == 0){
-				uart0_SendChar(weight_Total);       
-				uart0_SendChar('\n');
+
+			/* Send Data through XBee */
+			if (calibrationModeFLAG == 0)
+			{
+				uart0_SendChar(1,weight_Total);
+				uart0_SendChar(1,'\n');
 			}
-			sleep_xbee(); //sleep the xbee.
+
+			/* Put XBee in sleep mode */
+			sleep_xbee();
 		}
-		/*CASE 2:Wake up xbee for sending the data*/ 
-		else if (xbee_cnt == 9){
-			wake_xbee(); //Wake up xbee	
+
+		/* CASE 2:Wake up XBee for sending the data */
+		else if (xbee_cnt == 9)
+		{
+			/* Wake up XBee */
+			wake_xbee();
 		}
-		
-		
 	}
+
 	//      Switch    //
-	if (SwCount >CALIB_TIME){
+	if (SwCount >CALIB_TIME)
+	{
 		SwCount = 0;
 		timerFLAG = 0;
 	}
-	else{
+	else
+	{
 		//timerFlag means timer is working
-		if (timerFLAG == 1){
+		if (timerFLAG == 1)
+		{
 			++SwCount;
 		}
 			
-		// first capture captures first 5 seconds of the startup.
-		if (firstCapture == 1){
-			if (swHighCount > 0){
+		// first capture starts on first 5 seconds of the startup.
+		if (firstCapture == 1)
+		{
+			if (swHighCount > 0)
+			{
 				/* reset counters */ 
 				SwCount = 0;
 				
@@ -498,18 +484,18 @@ static void MODE2ISR(void){
 			}				
 		}
 		/* 1 press detected =  scan heel value of 10 = program the digipot only for heel = flash led
-		 *scan fft value for 10 = program the fft  = flash led ...
+		 *scan fft value for 10 = program the FFT  = flash led ...
 		 *capture no of switch press wait till timer 5 second is finished and timerFlag becomes 0 
 		 */
-		if (secondCapture == 1){	
-			if (timerFLAG == 0){
-				//calibrationModeFLAG = 0 ;
-				
+		if (secondCapture == 1)
+		{
+			if (timerFLAG == 0)
+			{
 				//second capture time is completed
 				secondCapture = 0;
 				
-				// now programming the digipots.
-				programDigipots_FLAG = 1;
+				// now programming the Digipots.
+				calibrateSensor_FLAG = 1;
 			}
 		}
 	}
@@ -517,11 +503,13 @@ static void MODE2ISR(void){
 	 * Calib Switch Sensing Part 
 	 */
 	 /* HIGH Logic */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )	{	
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )
+	{
 		countL=0;
 		++countH;
-		/* 40ms debouncing */
-		if (countH > 10){
+		/* 40ms Debouncing */
+		if (countH > 10)
+		{
 			SwFlag = 1;
 			swHighCount++;
 			
@@ -531,17 +519,35 @@ static void MODE2ISR(void){
 		}
 	}
 	/* LOW Logic */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (SwFlag==1) && (timerFLAG == 1) ){
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (SwFlag==1) && (timerFLAG == 1) )
+	{
 		countH = 0; 
 		++countL;
-		if (countL > 10){
+		if (countL > 10)
+		{
 			SwFlag = 0;
 	
 			//reset flags
 			countH = 0;
 			countL = 0;
 		}
-		//clear_gpio (1<<Calib_LED); //low
+	}
+
+	/*
+	 * This condition creates log file 10 seconds after startup
+	 */
+	if (start_log_timer == 1)
+	{
+		if (log_enable_cnt > 1000)
+		{
+			create_log_file=1;
+			log_enable_cnt = 0;
+			start_log_timer=0;
+		}
+		else
+		{
+			log_enable_cnt++;
+		}
 	}
 	SAMPLE(1, 3); //AD1.3
 	SAMPLE(0, 3); //AD0.3
@@ -553,73 +559,93 @@ static void MODE2ISR(void){
 	SAMPLE(1, 6); //AD1.6
 #undef SAMPLE
   
-  for(j = 0; j < ind; j++){
+  for(j = 0; j < ind; j++)
+  {
 		//less than buf size
-		if(RX_in < BUF_SIZE){
+		if(RX_in < BUF_SIZE)
+		{
 			RX_array1[RX_in] = q[j];
 			RX_in++;
 		
-			if(RX_in == BUF_SIZE) {
+			if(RX_in == BUF_SIZE)
+			{
 				log_array1 = 1;
 			}	//Raise Log_Array1 FLAG HIGH if Rx_array1 buffer is FULL.
 		}
 		//buffer overflow handling
-		else if(RX_in >= BUF_SIZE){
+		else if(RX_in >= BUF_SIZE)
+		{
 			RX_array2[RX_in - BUF_SIZE] = q[j];
 			RX_in++;
 			
 			//if buffer is full raise the log_array2 flag
-			if(RX_in == 2 * BUF_SIZE){
+			if(RX_in == 2 * BUF_SIZE)
+			{
 				log_array2 = 1;
 				RX_in = 0;   // CLEAR THE COUNTS
 			}
 		}
   }
-  if(RX_in < BUF_SIZE){
-		if(asc == 'N') { 
+  if(RX_in < BUF_SIZE)
+  {
+		if(asc == 'N')
+		{
 			RX_array1[RX_in] = '$'; 
 		}
-		else if(asc == 'Y'){
+		else if(asc == 'Y')
+		{
 			RX_array1[RX_in] = 13; 
 		}
+
 		RX_in++;
-		if(RX_in == BUF_SIZE){
+		if(RX_in == BUF_SIZE)
+		{
 			log_array1 = 1;
 		}
   }
-  else if(RX_in >= BUF_SIZE){
-		if(asc == 'N'){
+  else if(RX_in >= BUF_SIZE)
+  {
+		if(asc == 'N')
+		{
 			RX_array2[RX_in - BUF_SIZE] = '$';
 		}
 		
-		else if(asc == 'Y'){ 
+		else if(asc == 'Y')
+		{
 			RX_array2[RX_in - BUF_SIZE] = 13; 
 		}
 		RX_in++;
 		
-		if(RX_in == 2 * BUF_SIZE){
+		if(RX_in == 2 * BUF_SIZE)
+		{
 		  log_array2 = 1;
 		  RX_in = 0;
 		}
   }
-  if(RX_in < BUF_SIZE){
-    if(asc == 'N'){
+  if(RX_in < BUF_SIZE)
+  {
+    if(asc == 'N')
+    {
 		RX_array1[RX_in] = '$';
 	}
-    else if(asc == 'Y'){
+    else if(asc == 'Y')
+    {
 		RX_array1[RX_in] = 10; 
 	}
     RX_in++;
     if(RX_in == BUF_SIZE) log_array1 = 1;
   }
   
-  else if(RX_in >= BUF_SIZE){
+  else if(RX_in >= BUF_SIZE)
+  {
     if(asc == 'N') RX_array2[RX_in - BUF_SIZE] = '$';
-    else if(asc == 'Y'){ 
+    else if(asc == 'Y')
+    {
 		RX_array2[RX_in - BUF_SIZE] = 10; 
 	}
     RX_in++;
-    if(RX_in == 2 * BUF_SIZE){
+    if(RX_in == 2 * BUF_SIZE)
+    {
 		log_array2 = 1;
 		RX_in = 0;
     }
@@ -650,92 +676,10 @@ void FIQ_Routine(void)
 void Initialize(void)
 {
   rprintf_devopen(putc_serial0);
-  
-// DEFAULT LOGOMATIC
-// 0xCF351505 =   0b 11 00 11 11 00 11 01 01 00 01 01 01 00 00 01 01
-// 0x15441801 = //0b 00 01 01 01 01 00 01 00 00 01 10 00 00 00 00 01
-
-// PIN_SEL1
-// 0xCC351505 =   0b 11 00 11 00 00 11 01 01 00 01 01 01 00 00 01 01
-
-// PIN_SEL2
-// 0x14441801 = //0b 00 01 01 00 01 00 01 00 00 01 10 00 00 00 00 01
-
- /*
-Digital 5 (Calib)   		(1st press within first 5sec, then within 5 seconds check the number of press and program digipots)
-Digital 4 (Calib_LED)          (flash high for 1sec and then low when 1st press is detected) 
-Digital 3 (CS_1)
-Digital 4 (CS)
-
-P3 = P0.28/AD0.1   (CS_1)
-P4 = P0.25/AD0.4   (CALIB_LED)
-P5 = P0.22/AD1.6   (CALIB)
-CS1 = P0.20
-*/
-  
-  //
-  // Symbol | Value | Function
-  // -------|-------|----------------------------------
-  // PINSEL0|       |
-  // P0.0   | 01    | TXD (UART0)
-  // P0.1   | 01    | RxD (UART0)
-  // P0.2   | 00    | GPIO Port 0.2
-  // P0.3   | 00    | GPIO Port 0.3
-  // P0.4   | 01    | SCK0 (SPI0)
-  // P0.5   | 01    | MISO0 (SPI0)
-  // P0.6   | 01    | MOSI0 (SPI0)
-  // P0.7   | 00    | GPIO Port 0.7
-  // P0.8   | 01    | TXD (UART1)
-  // P0.9   | 01    | RXD (UART1)
-  // P0.10  | 11    | AD1.2
-  // P0.11  | 00    | GPIO Port 0.11
-  // P0.12  | 11    | AD1.3     				//00 = GPIO_PORT_12 SET - SLEEP PIN=P8
-  // P0.13  | 11    | AD1.4
-  // P0.14  | 00    | GPIO Port 0.14
-  // P0.15  | 11    | AD1.5
-
-  // PINSEL1|       |
-  // P0.16  | 01    | EINT0
-  // P0.17  | 10    | GPIO Port 0.17
-  // P0.18  | 10    | GPIO Port 0.18
-  // P0.19  | 10    | GPIO Port 0.19
-  // P0.20  | 00    | GPIO Port 0.20				//CS1     (OUPUT)  (DONE)
-  // P0.21  | 10    | AD1.6
-  // P0.22  | 01    | AD1.7							//CALIB    (INPUT) (DONE)
-  // P0.23  | 00    | GPIO Port 0.23
-  // P0.24  | 00    | Reserved
-  // P0.25  | 01    | AD0.4(Default) /gpio (current				//CALIB_LED  //OUTPUT
-  // P0.26  | 00    | Reserved 
-  // P0.27  | 01    | Reserved
-  // P0.28  | 01    | AD0.1                   		 //00 = GPIO_PORT_28 SET - BATTERY SENSING=P3      x    CS_1 (OUTPUT)
-  // P0.29  | 01    | AD0.2   (Read the foot)
-  // P0.30  | 01    | AD0.3   (Read the heel)
-  // P0.31  | 00    | GPO Port only
-
-  PINSEL0 = 0xCC351505;				// 1100 1111 0011 0101 0001 0101 0000 0101
-
-  PINSEL1 = 0x144008A9;//0x14400801;	 //0001 0100 0100 0000 0000 1010 1010 1001	
-  // P0.0  = INPUT  | TXD (UART0)
-  // P0.1  = INPUT  | RxD (UART0)
-  // P0.2  = OUTPUT | STAT0 LED
-  // P0.3  = INPUT  | STOP Button
-  // P0.4  = INPUT  | SCK0 (SPI0)
-  // P0.5  = INPUT  | MISO0 (SPI0)
-  // P0.6  = INPUT  | MOSI0 (SPI0)
-  // P0.7  = OUTPUT | Chip Select 0
-  // P0.8  = INPUT  | TXD (UART1)
-  // P0.9  = INPUT  | RXD (UART1)
-  // P0.10 = INPUT  | AD1.2
-  // P0.11 = OUTPUT | STAT1 LED 
-  // P0.17 = SCK1 (SSP)
-  // P0.18 = MISO1 (SSP)
-  // P0.19 = MOSI1 (SSP)
-   //P0.20 = OUTPUT GPIO (SSP)
-  
-  // Rest of Port 0 are inputs
-  
+  PINSEL0 = 0xCC351505;					// 1100 1111 0011 0101 0001 0101 0000 0101
+  PINSEL1 = 0x144008A9;					// 0001 0100 0100 0000 0000 1010 1010 1001
   //0001 0010 0001 0000 0001 1000 1000 0100
-  IODIR0 |= 0x12101884; //(v2)   //12101884 (v2)      //0x00001884  (v1)                  
+  IODIR0 |= 0x12101884;
   //10010000100000001100010000100
   IOSET0 = 0x00000080;  // Set P0.7 HIGH | CS0 HIGH
 
@@ -1114,7 +1058,7 @@ void mode_2(void){
 }
 
 /*
- * This function normal routine of Logomatic
+ * This function normal routine of LOGOMATIC
  */
 void mode_action(void){
   while(1)
@@ -1122,20 +1066,23 @@ void mode_action(void){
 	/*
 	 * Calibration Mode Detected 
 	 */
-	if (calibrationModeFLAG == 1){
-		if (flash_Calib_led == 1){
-			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+	if (calibrationModeFLAG == 1)
+	{
+		if (flash_Calib_led == 1)
+		{
+			uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			flash_CalibLED(1);
 			
 			/*Enabling timer and check for switches in second capture.*/
 			timerFLAG =1;
 			secondCapture = 1;
 			flash_Calib_led = 0;
-			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+			uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 		}
-		if (programDigipots_FLAG == 1){
-			uart0_SendString ("\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-			uart0_SendString ("\r\nsno of switch pressed="); uart0_SendChar (swHighCount+48);
+		if (calibrateSensor_FLAG == 1)
+		{
+			uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+			uart0_SendString (DEBUG_LOGOMATIC,"\r\nNumber of Switch Pressed="); uart0_SendChar (DEBUG_LOGOMATIC,swHighCount+48);
 			flash_CalibLED(2);
 			/* Read switch count here 
 			 * Check heel and fft here
@@ -1144,97 +1091,151 @@ void mode_action(void){
 			 * Flash LED...
 			 * Heel Weight 
 			 */
-			switch (swHighCount){
+			switch (swHighCount)
+			{
 				case 1:
-					uart0_SendString ("\r\n SW: Pressed 1 times.");
-					calibrate_load_cell(&s1, FFT_TYPE,10.0);
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 1 times.");
+					calibrate_load_cell(&s1, FFT_TYPE,10.0,"FFT sensor");
 					flash_CalibLED(3);
-					uart0_SendString ("\r\n Wait for 6 seconds");
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
 					delay_ms(6000); //6s delay
-					calibrate_load_cell(&s2,HEEL_TYPE,10.0);
-					write_sd_card(s1.gain, s2.gain);
 					flash_CalibLED(4);
+					calibrate_load_cell(&s2,HEEL_TYPE,10.0,"HEEL sensor");
+					write_sd_card(s1.gain, s2.gain);
+					flash_CalibLED(5);
 					break;
 				case 2:
-					uart0_SendString ("\r\n SW: Pressed 2 times.");
-					calibrate_load_cell(&s1, FFT_TYPE,20.0);
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 2 times.");
+					calibrate_load_cell(&s1, FFT_TYPE,20.0,"FFT sensor");
 					flash_CalibLED(3);
-					uart0_SendString ("\r\n Wait for 6 seconds");
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
 					delay_ms(6000); //6s delay
-					calibrate_load_cell(&s2, HEEL_TYPE,20.0);
-					write_sd_card(s1.gain, s2.gain);
 					flash_CalibLED(4);
+					calibrate_load_cell(&s2, HEEL_TYPE,20.0,"HEEL sensor");
+					write_sd_card(s1.gain, s2.gain);
+					flash_CalibLED(5);
 					break;
 				case 3:
-					uart0_SendString ("\r\n SW: Pressed 3 times.");
-					calibrate_load_cell(&s1,FFT_TYPE,30.0);
-					uart0_SendString ("\r\n Wait for 6 seconds");
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 3 times.");
+					calibrate_load_cell(&s1,FFT_TYPE,30.0,"FFT sensor");
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
 					flash_CalibLED(3);
 					delay_ms(6000); //6s delay
-					calibrate_load_cell(&s2,HEEL_TYPE,30.0);
-					write_sd_card(s1.gain, s2.gain);
 					flash_CalibLED(4);
+					calibrate_load_cell(&s2,HEEL_TYPE,30.0,"HEEL sensor");
+					write_sd_card(s1.gain, s2.gain);
+					flash_CalibLED(5);
 					break;
 				default:
 					break;
 			}
 			// calibration completed
 			calibrationModeFLAG = 0;
-			programDigipots_FLAG =0;
+			calibrateSensor_FLAG =0;
 		}
 	}
 	/*Normal Condition*/
-	else{
-#if 0
-		  	if (verbose == 1){
-			    char name[32];
-			  	int count = 0;
-				count++;  //BHW TODO: this makes the count start from 1, not 0 to match docs
-				string_printf(name,"LOG%02d.txt",count);
-				while(root_file_exists(name))
+	else
+	{
+#ifdef ENABLE_SD_LOGS
+			long j=0;
+			/* 10s UP after startup then create new log file */
+			if (create_log_file == 1)
+			{
+				if ((secondCapture==0) && (calibrateSensor_FLAG==0) && (calibrationModeFLAG==0) && (timerFLAG==0))
 				{
+					char name[32];
+					int count = 0;
+					uart0_SendString(DEBUG_LOGOMATIC,"->Creating Log File\n");
 					count++;
-					if(count == 250){
-						uart0_SendString("Got count = 250 \n\r");
-						  while(1){
+					string_printf(name,"LOG%02d.txt",count);
+					fat_close_file(cfg);
+					while(root_file_exists(name))
+					{
+						count++;
+						if(count == 250)
+						{ 
+							while(1)
+							{
 								stat(0,ON);
 								stat(1,ON);
 								delay_ms(1000);
 								stat(0,OFF);
 								stat(1,OFF);
 								delay_ms(1000);
-						  }
+							}
+						}
+						string_printf(name,"LOG%02d.txt",count);
 					}
-					string_printf(name,"LOG%02d.txt",count);
+					handle = root_open_new(name);
+					sd_raw_sync();
+					create_log_file=0;
+					savelogs=1;
 				}
-				handle = root_open_new(name);
-				sd_raw_sync();
-				verbose = 0;
-		  	}
-			if(log_array1 == 1){
-				stat(0,ON);
-				/* print the data on the console before saving in sd-card */
-				/*WRITE THE RX_array1 values in the SD_CARD as it full */
-				if(fat_write_file(handle,(unsigned char *)RX_array1, stringSize) < 0){	  
-					while(1){
-					  stat(0,ON);
-					  for(j = 0; j < 500000; j++);
-					  stat(0,OFF);
-					  stat(1,ON);
-					  for(j = 0; j < 500000; j++);
-					  stat(1,OFF);
-					}
-				}
-				sd_raw_sync();
-				stat(0,OFF);
-				log_array1 = 0;
 			}
-		
-			if(log_array2 == 1){
-				stat(1,ON);
-				/* print the data on the console before saving in sd-card*/
-				/* WRITE THE RX_array2 values in the SD_CARD as it full */
-				if(fat_write_file(handle,(unsigned char *)RX_array2, stringSize) < 0){	  
+			
+			/* Start saving the LOGS */
+			if (savelogs == 1)
+			{
+				if(log_array1 == 1)
+				{
+					stat(0,ON);
+					/* print the data on the console before saving in sd-card */
+					/*WRITE THE RX_array1 values in the SD_CARD as it full */
+					if(fat_write_file(handle,(unsigned char *)RX_array1, stringSize) < 0)
+					{	  
+						while(1)
+						{
+						  stat(0,ON);
+						  for(j = 0; j < 500000; j++);
+						  stat(0,OFF);
+						  stat(1,ON);
+						  for(j = 0; j < 500000; j++);
+						  stat(1,OFF);
+						}
+					}
+					sd_raw_sync();
+					stat(0,OFF);
+					log_array1 = 0;
+				}
+			
+				if(log_array2 == 1)
+				{
+					stat(1,ON);
+					/* print the data on the console before saving in sd-card*/
+					/* WRITE THE RX_array2 values in the SD_CARD as it full */
+					if(fat_write_file(handle,(unsigned char *)RX_array2, stringSize) < 0)
+					{	  
+						while(1)
+						{
+							stat(0,ON);
+							for(j = 0; j < 500000; j++);
+							stat(0,OFF);
+							stat(1,ON);
+							for(j = 0; j < 500000; j++);
+							stat(1,OFF);
+						}
+				  }
+				  sd_raw_sync();
+				  stat(1,OFF);
+				  log_array2 = 0;
+				}
+				/* STOP Button Condition */
+				if((IOPIN0 & 0x00000008) == 0)
+				{
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\nSTOP BT Pressed!");
+					VICIntEnClr = 0xFFFFFFFF;
+					
+					if(RX_in < BUF_SIZE)
+					{
+						fat_write_file(handle, (unsigned char *)RX_array1, RX_in);
+						sd_raw_sync();
+					}
+					else if(RX_in >= BUF_SIZE)
+					{
+						fat_write_file(handle, (unsigned char *)RX_array2, RX_in - BUF_SIZE);
+						sd_raw_sync();
+					}
 					while(1){
 						stat(0,ON);
 						for(j = 0; j < 500000; j++);
@@ -1243,36 +1244,165 @@ void mode_action(void){
 						for(j = 0; j < 500000; j++);
 						stat(1,OFF);
 					}
-			  }
-			  sd_raw_sync();
-			  stat(1,OFF);
-			  log_array2 = 0;
-			}
-			/* STOP Button Condition */
-			if((IOPIN0 & 0x00000008) == 0){
-				uart0_SendString ("\r\nSTOP BT Pressed!"); 
-				VICIntEnClr = 0xFFFFFFFF;
-				
-				if(RX_in < BUF_SIZE)
-				{
-					fat_write_file(handle, (unsigned char *)RX_array1, RX_in);
-					sd_raw_sync();
-				}
-				else if(RX_in >= BUF_SIZE)
-				{
-					fat_write_file(handle, (unsigned char *)RX_array2, RX_in - BUF_SIZE);
-					sd_raw_sync();
-				}
-				while(1){
-					stat(0,ON);
-					for(j = 0; j < 500000; j++);
-					stat(0,OFF);
-					stat(1,ON);
-					for(j = 0; j < 500000; j++);
-					stat(1,OFF);
 				}
 			}
+
 #endif
+		}
+	}
+}
+
+/*
+* Calibrate Load Cell Heel or FFT
+* @ adc: ADC value of heel or fft
+*/
+void calibrate_load_cell(calib *sensor, uint8_t type, float weight, char* msg)
+{
+	uint32_t cnt=0, avg_adc=0;
+	char printbuf[30];
+
+	sensor->offset_nw = 0;
+	uart0_SendString (DEBUG_LOGOMATIC,"\r\nPut the ");ftoa(weight, printbuf,1);uart0_SendString (DEBUG_LOGOMATIC,printbuf);
+	uart0_SendString(DEBUG_LOGOMATIC,"KG weight on "); uart0_SendString(DEBUG_LOGOMATIC,msg);
+	uart0_SendString(DEBUG_LOGOMATIC," and hold it until led flashes.");
+	delay_ms(4000);
+	while (1){
+		if (cnt>20){
+			avg_adc = (sensor->offset_w)/20;
+			//uart0_SendString (DEBUG_LOGOMATIC,"\r\n\r\nAverage ADC Value= ");intToStr(avg_adc, printbuf, 3);		uart0_SendString (DEBUG_LOGOMATIC,printbuf);
+
+			sensor->gain = (weight*1000.0)/(avg_adc-(sensor->offset_nw));
+			uart0_SendString (DEBUG_LOGOMATIC,"\r\n\r\nGain= ");	ftoa(sensor->gain, printbuf, 1);	uart0_SendString (DEBUG_LOGOMATIC,printbuf);
+			cnt=0;
+			break;
+		}else{
+			uart0_SendString (DEBUG_LOGOMATIC,"\r\nADC= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (DEBUG_LOGOMATIC,printbuf);
+			sensor->offset_w += sensor->adc;
+			cnt++;
+			delay_ms(100);
+		}
+	}
+	uart0_SendString (DEBUG_LOGOMATIC,"\r\n Release weight from the sensor");
+}
+
+/* Function writes data in sd-card
+ * @gain_fft : gain fft value
+ * @gain_heel: gain heel value
+ */
+void write_sd_card(float gain_fft, float gain_heel){
+	char buf_gain_fft[25], buf_gain_heel[25],temp[30];
+	int i=0;
+	char buffer_file[256];
+#if 1
+	memset(buf_gain_heel,'0',sizeof(buf_gain_heel));
+	memset(buf_gain_fft, '0', sizeof(buf_gain_fft));
+
+	/* Compose FFT to save in SD-Card */
+	ftoa (gain_fft, temp, 1);
+	for (i=0; temp[i]!=0;i++)	{buf_gain_fft[i] = temp[i];}
+	buf_gain_fft[5]=0;
+
+	/* Compose Heel to save in SD-Card */
+	ftoa (gain_heel, temp, 1);
+	for (i=0; temp[i]!=0;i++)	{buf_gain_heel[i] = temp[i];}
+	buf_gain_heel[5]=0;
+
+	strcpy(buffer_file, "GAIN FFT=");
+	strcat(buffer_file, buf_gain_fft);
+	strcat(buffer_file, "\r\n");
+	strcat(buffer_file, buf_gain_heel);
+	strcat(buffer_file, "\r\n");
+	//uart0_SendString(DEBUG_LOGOMATIC,"\r\n->Writing Data\r\n");uart0_SendString(DEBUG_LOGOMATIC,buffer_file);
+#endif
+
+	if (fat_write_file(cfg,(unsigned char *)buffer_file, strlen(buffer_file)) > 0){
+		uart0_SendString (DEBUG_LOGOMATIC,"\r\nSuccessfully written");
+	}
+	else{
+		uart0_SendString (DEBUG_LOGOMATIC,"\r\nUnable to write");
+	}
+	sd_raw_sync();
+    fat_close_file(cfg);
+}
+
+/*Read the calibration parameters*/
+void calib_init(void){
+	int x, mark = 0, ind = 0, i=0;
+	char temp;
+	char gain_buf_fft[25],gain_buf_heel[25],temp_buf[30];
+	char* errCheck;
+	float d=0.00;
+	char filename[32];
+	char buffer_file[256];
+	signed int buffersize;
+
+	memset (gain_buf_heel,'0',sizeof(gain_buf_heel));
+	memset (gain_buf_fft, '0',sizeof(gain_buf_fft));
+
+	string_printf(filename,"CALIB02.txt");
+	if(root_file_exists(filename)){
+	    cfg = root_open(filename);
+	    buffersize = fat_read_file(cfg, (unsigned char *)buffer_file, 512);
+	    buffer_file[buffersize]='\0';
+	    fat_close_file(cfg);
+	}
+	else{
+		cfg = root_open_new(filename);
+		if (cfg ==0)
+		{
+		  while(1)
+		  {
+			stat(0,ON);
+			delay_ms(50);
+			stat(0,OFF);
+			stat(1,ON);
+			delay_ms(50);
+			stat(1,OFF);
+		  }
+		}
+		strcpy(buffer_file, "GAIN FFT=00000\r\nGAIN HEEL=00000\r\n");
+		buffersize = strlen(buffer_file);
+		uart0_SendString (DEBUG_LOGOMATIC,"\r\nWriting data in Calib.txt: ");uart0_SendString(DEBUG_LOGOMATIC,buffer_file);
+		fat_write_file(cfg, (unsigned char*)buffer_file, buffersize);
+		sd_raw_sync();
+	}
+
+	for (x=0; x<buffersize; x++){
+		temp = buffer_file[x];
+		if (temp=='=')
+		{
+			  mark = x;
+			  ind++;
+			  if (ind == 1)
+			  {
+				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
+					  if(i > 9){
+						  break;
+					  }
+					  else{
+							gain_buf_fft[i]= buffer_file[mark+1+i];
+					  }
+				  }
+				  gain_buf_fft[i]= 0;
+				  d = strtod(gain_buf_fft, &errCheck);
+				  s1.gain=d; //Save the gain of FFT
+				  ftoa (d, temp_buf, 1);
+				  uart0_SendString (DEBUG_LOGOMATIC,"\r\n->FFT GAIN READ FROM SD-CARD= ");	uart0_SendString(DEBUG_LOGOMATIC,temp_buf);
+			  }else if (ind == 2){
+				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
+						  if(i > 9){
+							  break;
+						  }
+						  else{
+							  gain_buf_heel[i]= buffer_file[mark+1+i];
+						  }
+				  }
+				  gain_buf_heel[i]= 0;
+			      d = strtod(gain_buf_heel, &errCheck);
+				  s2.gain=d; //Save the gain of Heel
+				  ftoa (d, temp_buf, 1);
+				  uart0_SendString (DEBUG_LOGOMATIC,"\r\n->HEEL GAIN READ FROM SD-CARD= ");	uart0_SendString(DEBUG_LOGOMATIC,temp_buf);
+			  }
 		}
 	}
 }
@@ -1412,14 +1542,16 @@ void ftoa(float n, char* res, int afterpoint) {
 	SEND STRING  OVER UART
 ====================================
 */
-void uart0_SendString (char* str){
-
-	while (*str != '\0'){
-	
-		//THRE (Threshold Holding Register Empty) 
-		U0THR = *str;
-		while ((U0LSR & (1<<5)) == 0); //If there is data in the buffer run while loop.
-		str++;
+void uart0_SendString (uint8_t en, char* str){
+	if (en)
+	{
+		while (*str != '\0')
+		{
+			//THRE (Threshold Holding Register Empty)
+			U0THR = *str;
+			while ((U0LSR & (1<<5)) == 0); //If there is data in the buffer run while loop.
+			str++;
+		}
 	}
 }
 
@@ -1428,9 +1560,11 @@ void uart0_SendString (char* str){
 	SEND CHARACTERS  OVER UART
 ====================================
 */
-void uart0_SendChar (char ch){
-	U0THR = ch;
-	while ((U0LSR & (1<<5)) == 0); //If there is data in the buffer run while loop.
+void uart0_SendChar (uint8_t en, char ch){
+	if (en){
+		U0THR = ch;
+		while ((U0LSR & (1<<5)) == 0); //If there is data in the buffer run while loop.
+	}
 }
 
 /*
@@ -1522,167 +1656,8 @@ void programFFT_DIGIPOTS(uint8_t steps){
 void flash_CalibLED(uint8_t num_flash){
 	for (int i=0;i<num_flash;i++){
 		set_gpio (1<<Calib_LED); //high
-		delay_ms(1000);
+		delay_ms(300);
 		clear_gpio (1<<Calib_LED); //low
-		delay_ms(1000);
-	}
-}
-
-/*
-* Calibrate Load Cell Heel or FFT
-* @ adc: ADC value of heel or fft
-*/
-void calibrate_load_cell(calib *sensor, uint8_t type, float weight){
-	uint32_t cnt=0, avg_adc=0;
-	char printbuf[30];
-	
-	sensor->offset_nw = 0;
-	uart0_SendString ("\r\n Put the ");ftoa(weight, printbuf,3);uart0_SendString (printbuf);uart0_SendString(" weight on sensor");
-	delay_ms(6000);
-	while (1){
-		if (cnt>20){
-			avg_adc = (sensor->offset_w)/20;
-			uart0_SendString ("\r\n\r\navg_adc= ");intToStr(avg_adc, printbuf, 3);		uart0_SendString (printbuf);
-			
-			sensor->gain = (weight*1000.0)/(avg_adc-(sensor->offset_nw));
-			uart0_SendString ("\r\n\r\nGain= ");	ftoa(sensor->gain, printbuf, 1);	uart0_SendString (printbuf);
-			cnt=0;
-			break;
-		}else{
-			uart0_SendString ("\r\nADC= ");	intToStr(sensor->adc, printbuf, 3);	uart0_SendString (printbuf);
-			sensor->offset_w += sensor->adc;
-			cnt++;
-			delay_ms(100);
-		}	
-	}
-	uart0_SendString ("\r\n Release weight from the sensor");
-}
-
-/* Function writes data in sd-card
- * @gain_fft : gain fft value
- * @gain_heel: gain heel value
- */
-void write_sd_card(float gain_fft, float gain_heel){
-	char buf_gain_fft[25], buf_gain_heel[25],temp[30];
-	int i=0,iter=0;
-	char buffer_file[256],readbuf[256];
-	char filename[32];
-	char data[30]="load\r\n";
-
-
-#if 1
-	memset(buf_gain_heel,'0',sizeof(buf_gain_heel));
-	memset(buf_gain_fft, '0', sizeof(buf_gain_fft));
-
-	/* Compose FFT to save in SD-Card */
-	ftoa (gain_fft, temp, 1);
-	for (i=0; temp[i]!=0;i++)	{buf_gain_fft[i] = temp[i];}
-	buf_gain_fft[5]=0;
-
-	/* Compose Heel to save in SD-Card */
-	ftoa (gain_heel, temp, 1);
-	for (i=0; temp[i]!=0;i++)	{buf_gain_heel[i] = temp[i];}
-	buf_gain_heel[5]=0;
-	
-	strcpy(buffer_file, "GAIN FFT=");
-	strcat(buffer_file, buf_gain_fft);
-	strcat(buffer_file, "\r\n");
-	strcat(buffer_file, "GAIN HEEL=");
-	strcat(buffer_file, buf_gain_heel);
-	strcat(buffer_file, "\r\n");
-	uart0_SendString("\r\n->Writing Data\r\n");uart0_SendString(buffer_file);
-#endif
-
-	if (fat_write_file(cfg,(unsigned char *)buffer_file, strlen(buffer_file)) > 0){
-		uart0_SendString ("\r\nSuccessfully written");
-	}
-	else{
-		uart0_SendString ("\r\nUnable to write");
-	}
-	sd_raw_sync();
-    fat_close_file(cfg);
-}
-
-/*Read the calibration parameters*/
-void calib_init(void){
-	int x, mark = 0, ind = 0, i=0;
-	char temp;
-	char gain_buf_fft[25],gain_buf_heel[25],temp_buf[30];
-	char* errCheck;
-	float d=0.00;
-	char filename[32];
-	char buffer_file[256];
-	signed int buffersize;
-
-	memset (gain_buf_heel,'0',sizeof(gain_buf_heel));
-	memset (gain_buf_fft, '0',sizeof(gain_buf_fft));
-
-	string_printf(filename,"CALIB02.txt");
-	if(root_file_exists(filename)){
-	    cfg = root_open(filename);
-	    buffersize = fat_read_file(cfg, (unsigned char *)buffer_file, 512);
-	    buffer_file[buffersize]='\0';
-	    fat_close_file(cfg);
-	}
-	else{
-		cfg = root_open_new(filename);
-		if (cfg ==0)
-		{
-		  while(1)
-		  {
-			stat(0,ON);
-			delay_ms(50);
-			stat(0,OFF);
-			stat(1,ON);
-			delay_ms(50);
-			stat(1,OFF);
-		  }
-		}
-		strcpy(buffer_file, "GAIN FFT=00000\r\nGAIN HEEL=00000\r\n");
-		buffersize = strlen(buffer_file);
-		uart0_SendString ("\r\nWriting data in Calib.txt: ");uart0_SendString(buffer_file);
-		fat_write_file(cfg, (unsigned char*)buffer_file, buffersize);
-		sd_raw_sync();
-	}
-
-	for (x=0; x<buffersize; x++){
-		temp = buffer_file[x];
-		if (temp=='=')
-		{
-			  mark = x;
-			  ind++;
-			  if (ind == 1)
-			  {
-				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
-					  if(i > 9){
-						  break;
-					  }
-					  else{
-							gain_buf_fft[i]= buffer_file[mark+1+i];
-					  }
-				  }
-				  gain_buf_fft[i]= 0;
-				  uart0_SendString("\r\n->Read_Gain_fft1=");   uart0_SendString(gain_buf_fft);
-				  d = strtod(gain_buf_fft, &errCheck);
-				  s1.gain=d; //Save the gain of FFT
-				  ftoa (d, temp_buf, 1);
-				  uart0_SendString ("\r\n->Read_Gain_fft1= ");	uart0_SendString(temp_buf);
-			  }else if (ind == 2){
-				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
-						  if(i > 9){
-							  break;
-						  }
-						  else{
-							  gain_buf_heel[i]= buffer_file[mark+1+i];
-						  }
-				  }
-				  gain_buf_heel[i]= 0;
-			      uart0_SendString("\r\n->Read_Gain_heel1=");   uart0_SendString(gain_buf_heel);
-			      d = strtod(gain_buf_heel, &errCheck);
-				  s2.gain=d; //Save the gain of Heel
-				  ftoa (d, temp_buf, 1);
-				  uart0_SendString ("\r\n->Read_Gain_heel2= ");	uart0_SendString(temp_buf);
-			  }
-		}
+		delay_ms(300);
 	}
 }
