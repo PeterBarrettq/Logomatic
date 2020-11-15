@@ -432,7 +432,7 @@ static void MODE2ISR(void)
 			if (calibrationModeFLAG == 0)
 			{
 				uart0_SendChar(1,weight_Total);
-				uart0_SendChar(1,'\n');
+				//uart0_SendChar(1,'\n');
 			}
 
 			/* Put XBee in sleep mode */
@@ -1290,31 +1290,32 @@ void calibrate_load_cell(calib *sensor, uint8_t type, float weight, char* msg)
  * @gain_heel: gain heel value
  */
 void write_sd_card(float gain_fft, float gain_heel){
-	char buf_gain_fft[25], buf_gain_heel[25],temp[30];
-	int i=0;
+	char buf_gain_fft[25], buf_gain_heel[25];
 	char buffer_file[256];
-#if 1
-	memset(buf_gain_heel,'0',sizeof(buf_gain_heel));
+
+	memset(buf_gain_heel,'0', sizeof(buf_gain_heel));
 	memset(buf_gain_fft, '0', sizeof(buf_gain_fft));
 
-	/* Compose FFT to save in SD-Card */
-	ftoa (gain_fft, temp, 1);
-	for (i=0; temp[i]!=0;i++)	{buf_gain_fft[i] = temp[i];}
-	buf_gain_fft[5]=0;
+	/* Compose FFT to save in SD-CARD */
+	ftoa (gain_fft, buf_gain_fft, 1);
 
-	/* Compose Heel to save in SD-Card */
-	ftoa (gain_heel, temp, 1);
-	for (i=0; temp[i]!=0;i++)	{buf_gain_heel[i] = temp[i];}
-	buf_gain_heel[5]=0;
+	/* Compose Heel to save in SD-CARD */
+	ftoa (gain_heel, buf_gain_heel, 1);
 
+	/*
+	 * FORMAT= GAIN FFT=00000\r\nGAIN HEEL=00000\r\n
+	 */
 	strcpy(buffer_file, "GAIN FFT=");
 	strcat(buffer_file, buf_gain_fft);
 	strcat(buffer_file, "\r\n");
+	strcat(buffer_file, "GAIN HEEL=");
 	strcat(buffer_file, buf_gain_heel);
 	strcat(buffer_file, "\r\n");
-	//uart0_SendString(DEBUG_LOGOMATIC,"\r\n->Writing Data\r\n");uart0_SendString(DEBUG_LOGOMATIC,buffer_file);
-#endif
+	uart0_SendString(DEBUG_LOGOMATIC,"\r\n->Writing Data\r\n");uart0_SendString(DEBUG_LOGOMATIC,buffer_file);
 
+	/*
+	 * Write Data in SD-CARD
+	 */
 	if (fat_write_file(cfg,(unsigned char *)buffer_file, strlen(buffer_file)) > 0){
 		uart0_SendString (DEBUG_LOGOMATIC,"\r\nSuccessfully written");
 	}
@@ -1328,7 +1329,6 @@ void write_sd_card(float gain_fft, float gain_heel){
 /*Read the calibration parameters*/
 void calib_init(void){
 	int x, mark = 0, ind = 0, i=0;
-	char temp;
 	char gain_buf_fft[25],gain_buf_heel[25],temp_buf[30];
 	char* errCheck;
 	float d=0.00;
@@ -1340,13 +1340,16 @@ void calib_init(void){
 	memset (gain_buf_fft, '0',sizeof(gain_buf_fft));
 
 	string_printf(filename,"CALIB02.txt");
-	if(root_file_exists(filename)){
+
+	if(root_file_exists(filename))
+	{
 	    cfg = root_open(filename);
 	    buffersize = fat_read_file(cfg, (unsigned char *)buffer_file, 512);
 	    buffer_file[buffersize]='\0';
 	    fat_close_file(cfg);
 	}
-	else{
+	else
+	{
 		cfg = root_open_new(filename);
 		if (cfg ==0)
 		{
@@ -1366,42 +1369,54 @@ void calib_init(void){
 		fat_write_file(cfg, (unsigned char*)buffer_file, buffersize);
 		sd_raw_sync();
 	}
-
-	for (x=0; x<buffersize; x++){
-		temp = buffer_file[x];
-		if (temp=='=')
+	/*
+	 * Parsing the data
+	 */
+	for (x=0; x<buffersize; x++)
+	{
+		if(buffer_file[x]=='=')
 		{
 			  mark = x;
 			  ind++;
 			  if (ind == 1)
 			  {
-				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
-					  if(i > 9){
+				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++)
+				  {
+					  if(i > 9)
+					  {
 						  break;
 					  }
-					  else{
-							gain_buf_fft[i]= buffer_file[mark+1+i];
+					  else
+					  {
+							gain_buf_fft[i]=buffer_file[mark+1+i];
 					  }
 				  }
-				  gain_buf_fft[i]= 0;
+				  gain_buf_fft[i]=0;
 				  d = strtod(gain_buf_fft, &errCheck);
 				  s1.gain=d; //Save the gain of FFT
 				  ftoa (d, temp_buf, 1);
-				  uart0_SendString (DEBUG_LOGOMATIC,"\r\n->FFT GAIN READ FROM SD-CARD= ");	uart0_SendString(DEBUG_LOGOMATIC,temp_buf);
-			  }else if (ind == 2){
-				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++){
-						  if(i > 9){
+				  uart0_SendString (DEBUG_LOGOMATIC,"\r\n->Read FFT Gain from SD-CARD=> ");	
+				  uart0_SendString(DEBUG_LOGOMATIC,temp_buf);
+			  }
+			  else if (ind == 2)
+			  {
+				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++)
+				  {
+						  if(i > 9)
+						  {
 							  break;
 						  }
-						  else{
+						  else
+						  {
 							  gain_buf_heel[i]= buffer_file[mark+1+i];
 						  }
 				  }
-				  gain_buf_heel[i]= 0;
-			      d = strtod(gain_buf_heel, &errCheck);
-				  s2.gain=d; //Save the gain of Heel
+				  gain_buf_heel[i]=0;
+			          d = strtod(gain_buf_heel, &errCheck);
+				  s2.gain=d;			 //Save the gain of Heel
 				  ftoa (d, temp_buf, 1);
-				  uart0_SendString (DEBUG_LOGOMATIC,"\r\n->HEEL GAIN READ FROM SD-CARD= ");	uart0_SendString(DEBUG_LOGOMATIC,temp_buf);
+				  uart0_SendString (DEBUG_LOGOMATIC,"\r\n->Read HEEL Gain from SD-CARD= ");	
+				  uart0_SendString(DEBUG_LOGOMATIC,temp_buf);
 			  }
 		}
 	}
