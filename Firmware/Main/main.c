@@ -67,6 +67,11 @@
 #define BUF_SIZE 512
 #define AD0CR_REG_ADDR	0xE0034000
 
+#define XBEE_TICKS  10
+#define NUM_AVERAGE 16
+#define METHOD_1
+#define ENABLE_SD_LOGS 1
+
 char RX_array1[BUF_SIZE];
 char RX_array2[BUF_SIZE];
 char log_array1 = 0;
@@ -88,14 +93,7 @@ static int    baud = 9600;
 static int    freq = 100;
 static char   trig = '$';
 static short frame = 100;
-static char  ad1_7 = 'N';
-static char  ad1_6 = 'N';
-static char  ad1_3 = 'N';
-static char  ad1_2 = 'N';
-static char  ad0_4 = 'N';
-static char  ad0_3 = 'N';
-static char  ad0_2 = 'N';
-static char  ad0_1 = 'N';
+static char  ad1_7 = 'N', ad1_6 = 'N', ad1_3 = 'N', ad1_2 = 'N', ad0_4 = 'N', ad0_3 = 'N', ad0_2 = 'N', ad0_1 = 'N';
 
 
 /*******************************************************
@@ -103,72 +101,61 @@ static char  ad0_1 = 'N';
  ******************************************************/
 
 void Initialize(void);
-
 void setup_uart0(int newbaud, char want_ints);
 void uart0_SendString (uint8_t en, char* str);
 void uart0_SendChar (uint8_t en, char ch);
-
 void mode_0(void);
 void mode_1(void);
 void mode_2(void);
 void mode_action(void);
-
 void Log_init(void);
 void test(void);
 void stat(int statnum, int onoff);
 void AD_conversion(int regbank);
-
 void feed(void);
-
-//BHW Never defined... static void IRQ_Routine(void) __attribute__ ((interrupt("IRQ")));
-static void UART0ISR(void); //__attribute__ ((interrupt("IRQ")));
-static void UART0ISR_2(void); //__attribute__ ((interrupt("IRQ")));
-static void MODE2ISR(void); //__attribute__ ((interrupt("IRQ")));
-
+static void UART0ISR(void);
+static void UART0ISR_2(void);
+static void MODE2ISR(void);
 void FIQ_Routine(void) __attribute__ ((interrupt("FIQ")));
 void SWI_Routine(void) __attribute__ ((interrupt("SWI")));
 void UNDEF_Routine(void) __attribute__ ((interrupt("UNDEF")));
-
 void fat_initialize(void);
-
 void reverse(char* str, int len) ;
 int intToStr(int x, char str[], int d) ;
 void ftoa(float n, char* res, int afterpoint) ;
-/******************************************************/
-#define XBEE_TICKS  10
-#define NUM_AVERAGE 16
-#define METHOD_1
-#define ENABLE_SD_LOGS 1
-
 void clear_gpio(uint32_t pin);
 void set_gpio (uint32_t pin);
 void flash_CalibLED(uint8_t num_flash);
 void sleep_xbee (void);
 void wake_xbee (void);
-
-
-//SPI prototypes
-void SPI_Write(uint8_t data);
-void SPI_Init(void);
-char SPI_Read(void);
-
-//SPI1 prototypes
 void SPI1_Init (void);
 void SPI1_Write(uint8_t data);
 void programHeel_DIGIPOTS(uint8_t steps);
 void programFFT_DIGIPOTS(uint8_t steps);
+void write_sd_card(float gain_fft, float gain_heel);
+void calib_init(void);
+typedef struct calibration {
+	float gain;
+    uint32_t offset_w,offset_nw;
+	uint16_t adc;
+}calib;
+calib s1,s2;
+void calibrate_load_cell(calib *sensor, uint8_t type, float weight, char* msg);
 
-// XBEE MACRO AND VARIABLES
-/*********************************************************/
+
+enum mode {
+	FFT_TYPE=0,
+	HEEL_TYPE
+};
+
+
 uint16_t xbee_cnt = 0;
 uint8_t XBEE_SEND_FLAG = 0;
 static uint8_t WeightAvg[20];
-
 int weight_Total=0;
 float heel_weight=0.0, fft_weight=0.0;
 uint8_t k=0, iter=0;
 uint16_t total_WeightTemp=0;
-/*********************************************************/
 uint8_t SwFlag = 0;  //flag for maintain switch high and lows
 uint8_t timerFLAG = 1; //you can start and stop timer using timerFLAG , 1 means start 0 means stop
 uint16_t  SwCount=0; //it is timer counts.
@@ -181,24 +168,8 @@ uint8_t flash_Calib_led=1; //flashes the led on calibration
 uint8_t calibrateSensor_FLAG = 0; //when it is high program digipots.
 uint8_t STEPS_DIGIPOT = 25;  //digipots will be program will a step of 50.
 uint8_t DEBUG_LOGOMATIC=1;
-/********************************************************/
-typedef struct calibration{
-	float gain; 
-    uint32_t offset_w,offset_nw;
-	uint16_t adc;
-}calib;
-calib s1,s2;
-
-enum mode {
-	FFT_TYPE=0,
-	HEEL_TYPE
-};
 uint8_t create_log_file = 0,start_log_timer=1,savelogs=0;
 uint16_t log_enable_cnt=0;
-void calibrate_load_cell(calib *sensor, uint8_t type, float weight, char* msg);
-void write_sd_card(float gain_fft, float gain_heel);
-void calib_init(void);
-/***********************************************************************/
 
 
 /*******************************************************
@@ -243,13 +214,12 @@ int main (void)
 		uart0_SendString (DEBUG_LOGOMATIC,"\r\nFile don't exist.");
 	}
 
-	if(mode==0) {
+	if(mode==0)
 		mode_0(); 
-	} else if(mode==1) { 
+	else if(mode==1)
 		mode_1(); 
-	} else if(mode==2) { 
+	else if(mode==2)
 		mode_2(); 
-	}
 	return 0;
 }
 
@@ -288,8 +258,7 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				}										
 			}
 			/* Gather value of A0.2 (FFT WEIGHT) */
-			else if ((ADxCR == (unsigned long*)AD0CR_REG_ADDR) && (mask == 4))
-			{
+			else if ((ADxCR == (unsigned long*)AD0CR_REG_ADDR) && (mask == 4)) {
 #ifdef METHOD_1
 				s1.adc=value;
 				fft_weight = (s1.gain) * (s1.adc - (s1.offset_nw))/1000.0;
@@ -297,13 +266,11 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				fft_weight = (float)((value-6)/0.71);
 				fft_weight = fft_weight/4.0;
 #endif
-				if (fft_weight > 0.0)
-				{
+				if (fft_weight > 0.0) {
 					ftoa( fft_weight, p , 1); 		
 					NoOfBytes = strlen(p) + ind + 1;	
 				}
-				else
-				{
+				else {
 					fft_weight = 0.0;
 					p[0]='0';p[1]='.';p[2]='0';p[3]='\0';
 					NoOfBytes = strlen(p) + ind + 1;	
@@ -323,8 +290,7 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				WeightAvg[iter++] = (unsigned char)(total_WeightTemp);
 				
 				//Take average of only 16 samples....
-				if (iter > NUM_AVERAGE)
-				{
+				if (iter > NUM_AVERAGE) {
 					iter = 0;
 					for (k=0; k<NUM_AVERAGE;k++)
 						weight_Total += WeightAvg[k];
@@ -333,44 +299,47 @@ static inline int pushValue(char* q, int ind, int value, volatile unsigned long*
 				}
 			}
 			//all other pins except A0.2 and A0.3				
-			else
-			{
+			else {
 				// itoa returns the number of bytes written excluding
 				// trailing '\0', hence the "+ 1"
 				NoOfBytes = itoa(value, p, 10) + ind + 1;	
 			}
 			return NoOfBytes;
 	  }
-	  else if(asc == 'N')
-	  {
+	  else if(asc == 'N') {
 			p[0] = value >> 8;
 			p[1] = value;
 			return ind + 2;
 	  }
-	  else
-	  {
+	  else {
 			return ind;
 	  }
 }
-  /******************************************************************************
-			GET ADC SAMPLES
-   *****************************************************************************/
 
+/*
+ * This function gets the ADC samples
+ * sample()
+ * @q
+ * @ind
+ * @ADxCR: Register Address
+ * @ADxDR: Register Address
+ * @mask: mask
+ * @adx_bit: adc bit
+ */
 static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsigned long* ADxDR, int mask, char adx_bit)
 {
 	if(adx_bit == 'Y')
 	{
 		int value = 0;
-		 
+
 		*ADxCR = 0x00020FF00 | mask;
 		*ADxCR |= 0x01000000;  // start conversion
 		
-		while((value & 0x80000000) == 0)
-		{
-		  value = *ADxDR;
+		while((value & 0x80000000) == 0) {
+			value = *ADxDR;
 		}
 		*ADxCR = 0x00000000;
-	
+
 		// The upper ten of the lower sixteen bits of 'value' are the
 		// result. The result itself is unsigned. Hence a cast to
 		// 'unsigned short' yields the result with six bits of
@@ -379,32 +348,31 @@ static int sample(char* q, int ind, volatile unsigned long* ADxCR, volatile unsi
 	}
 	else
 	{
-		return ind;
+			return ind;
 	}
 }
 /*
- *Timer 0 ISR  (10ms Interrupt or 100 Frequency)
+ * This function handles Xbee and calibration switch
+ * MODE2ISR
  */
 static void MODE2ISR(void)
 {
-  int ind = 0;
-  int j;
-  char q[50];
-  T0IR = 1; // reset TMR0 interrupt
-  
-  for(j = 0; j < 50; j++)
+	int ind = 0;
+	int j;
+	char q[50];
+	T0IR = 1; // reset TMR0 interrupt
+
+	for(j = 0; j < 50; j++)
 		q[j] = 0;
 
-#define SAMPLE(X, BIT) ind = sample(q, ind, &AD##X##CR, &AD##X##DR, 1 << BIT, ad##X##_##BIT)
-  
-    /*Every 100ms send the data on the XBee*/
-	if (freq == 100)
-	{
+	#define SAMPLE(X, BIT) ind = sample(q, ind, &AD##X##CR, &AD##X##DR, 1 << BIT, ad##X##_##BIT)
+
+	/*Every 100ms send the data on the XBee*/
+	if (freq == 100) {
 		++xbee_cnt;
-	
+
 		/*CASE 1:Send the data and put XBee in sleep mode*/
-		if (xbee_cnt > XBEE_TICKS )
-		{
+		if (xbee_cnt > XBEE_TICKS ) {
 			xbee_cnt = 0;
 
 			/* Send Data through XBee */
@@ -413,83 +381,72 @@ static void MODE2ISR(void)
 				uart0_SendChar(1,'\n');
 			}
 
-
 			/* Put XBee in sleep mode */
 			sleep_xbee();
 		}
 
 		/* CASE 2:Wake up XBee for sending the data */
-		else if (xbee_cnt == 9)
-		{
-			/* Wake up XBee */
-			wake_xbee();
+		else if (xbee_cnt == 9) {
+				wake_xbee();
 		}
 	}
 
 	//      Switch    //
-	if (SwCount >CALIB_TIME)
-	{
+	if (SwCount >CALIB_TIME) {
 		SwCount = 0;
 		timerFLAG = 0;
 	}
-	else
-	{
+	else {
 		//timerFlag means timer is working
 		if (timerFLAG == 1)
 			++SwCount;
-			
+
 		// first capture starts on first 5 seconds of the startup.
-		if (firstCapture == 1)
-		{
-			if (swHighCount > 0)
-			{
-				/* reset counters */ 
+		if (firstCapture == 1) {
+			if (swHighCount > 0) {
+				/* reset counters */
 				SwCount = 0;
-				
+
 				/* disable timer for switch */
 				timerFLAG = 0;
-				
+
 				/* disable first capture */
 				firstCapture = 0;
-				
+
 				/* restart counting once again */
 				swHighCount = 0;
-				
-				/* flash calib_LED and re-enable timer after flashing LED */
-				calibrationModeFLAG = 1; 
 
-			}				
+				/* flash calib_LED and re-enable timer after flashing LED */
+				calibrationModeFLAG = 1;
+			}
 		}
 		/* 1 press detected =  scan heel value of 10 = program the digipot only for heel = flash led
-		 *scan fft value for 10 = program the FFT  = flash led ...
-		 *capture no of switch press wait till timer 5 second is finished and timerFlag becomes 0 
-		 */
-		if (secondCapture == 1)
-		{
-			if (timerFLAG == 0)
-			{
+		*scan fft value for 10 = program the FFT  = flash led ...
+		*capture no of switch press wait till timer 5 second is finished and timerFlag becomes 0
+		*/
+		if (secondCapture == 1) {
+			if (timerFLAG == 0) {
 				//second capture time is completed
 				secondCapture = 0;
-				
+
 				// now programming the Digipots.
 				calibrateSensor_FLAG = 1;
 			}
 		}
 	}
-	/*  
-	 * Calib Switch Sensing Part 
-	 */
-	 /* HIGH Logic */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0) && (SwFlag==0) && (timerFLAG == 1) )
-	{
+	/*
+	* Calib Switch Sensing Part
+	*/
+	/* HIGH Logic */
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0)
+			&& (SwFlag==0) && (timerFLAG == 1) ) {
 		countL=0;
 		++countH;
 		/* 40ms Debouncing */
-		if (countH > 10)
-		{
+		if (countH > 10) {
 			SwFlag = 1;
 			swHighCount++;
-			
+
 			//reset flags
 			countL = 0;
 			countH = 0;
@@ -498,12 +455,11 @@ static void MODE2ISR(void)
 	/* LOW Logic */
 	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (SwFlag==1) && (timerFLAG == 1) )
 	{
-		countH = 0; 
+		countH = 0;
 		++countL;
-		if (countL > 10)
-		{
+		if (countL > 10) {
 			SwFlag = 0;
-	
+
 			//reset flags
 			countH = 0;
 			countL = 0;
@@ -511,19 +467,16 @@ static void MODE2ISR(void)
 	}
 
 	/*
-	 * This condition creates log file 10 seconds after startup
-	 */
-	if (start_log_timer == 1)
-	{
-		if (log_enable_cnt > 1000)
-		{
+	* This condition creates log file 10 seconds after startup
+	*/
+	if (start_log_timer == 1) {
+		if (log_enable_cnt > 1000) {
 			create_log_file=1;
 			log_enable_cnt = 0;
 			start_log_timer=0;
 		}
-		else
-		{
-			log_enable_cnt++;
+		else {
+				log_enable_cnt++;
 		}
 	}
 	SAMPLE(1, 3); //AD1.3
@@ -534,114 +487,91 @@ static void MODE2ISR(void)
 	SAMPLE(0, 4); //AD0.4
 	SAMPLE(1, 7); //AD1.7
 	SAMPLE(1, 6); //AD1.6
-#undef SAMPLE
-  
-  for(j = 0; j < ind; j++)
-  {
+	#undef SAMPLE
+
+	for(j = 0; j < ind; j++)
+	{
 		//less than buf size
 		if(RX_in < BUF_SIZE)
 		{
 			RX_array1[RX_in] = q[j];
 			RX_in++;
-		
+
 			if(RX_in == BUF_SIZE)
 			{
-				log_array1 = 1;
+			log_array1 = 1;
 			}	//Raise Log_Array1 FLAG HIGH if Rx_array1 buffer is FULL.
 		}
 		//buffer overflow handling
-		else if(RX_in >= BUF_SIZE)
-		{
+		else if(RX_in >= BUF_SIZE) {
 			RX_array2[RX_in - BUF_SIZE] = q[j];
 			RX_in++;
-			
+
 			//if buffer is full raise the log_array2 flag
-			if(RX_in == 2 * BUF_SIZE)
-			{
-				log_array2 = 1;
-				RX_in = 0;   // CLEAR THE COUNTS
+			if(RX_in == 2 * BUF_SIZE) {
+					log_array2 = 1;
+					RX_in = 0;   // CLEAR THE COUNTS
 			}
 		}
-  }
-  if(RX_in < BUF_SIZE)
-  {
+	}
+	if(RX_in < BUF_SIZE)
+	{
 		if(asc == 'N')
-		{
-			RX_array1[RX_in] = '$'; 
-		}
+			RX_array1[RX_in] = '$';
 		else if(asc == 'Y')
-		{
-			RX_array1[RX_in] = 13; 
-		}
+			RX_array1[RX_in] = 13;
 
 		RX_in++;
 		if(RX_in == BUF_SIZE)
-		{
 			log_array1 = 1;
-		}
-  }
-  else if(RX_in >= BUF_SIZE)
-  {
+	}
+	else if(RX_in >= BUF_SIZE)
+	{
 		if(asc == 'N')
-		{
 			RX_array2[RX_in - BUF_SIZE] = '$';
-		}
-		
 		else if(asc == 'Y')
-		{
-			RX_array2[RX_in - BUF_SIZE] = 13; 
-		}
+			RX_array2[RX_in - BUF_SIZE] = 13;
 		RX_in++;
-		
-		if(RX_in == 2 * BUF_SIZE)
-		{
-		  log_array2 = 1;
-		  RX_in = 0;
+
+		if(RX_in == 2 * BUF_SIZE) {
+			log_array2 = 1;
+			RX_in = 0;
 		}
-  }
-  if(RX_in < BUF_SIZE)
-  {
-    if(asc == 'N')
-    {
-		RX_array1[RX_in] = '$';
 	}
-    else if(asc == 'Y')
-    {
-		RX_array1[RX_in] = 10; 
+	if(RX_in < BUF_SIZE) {
+		if(asc == 'N')
+			RX_array1[RX_in] = '$';
+		else if(asc == 'Y')
+			RX_array1[RX_in] = 10;
+		RX_in++;
+		if(RX_in == BUF_SIZE)
+			log_array1 = 1;
 	}
-    RX_in++;
-    if(RX_in == BUF_SIZE) log_array1 = 1;
-  }
-  
-  else if(RX_in >= BUF_SIZE)
-  {
-    if(asc == 'N') RX_array2[RX_in - BUF_SIZE] = '$';
-    else if(asc == 'Y')
-    {
-		RX_array2[RX_in - BUF_SIZE] = 10; 
+
+	else if(RX_in >= BUF_SIZE) {
+		if(asc == 'N')
+			RX_array2[RX_in - BUF_SIZE] = '$';
+		else if(asc == 'Y')
+			RX_array2[RX_in - BUF_SIZE] = 10;
+		RX_in++;
+		if(RX_in == 2 * BUF_SIZE) {
+			log_array2 = 1;
+			RX_in = 0;
+		}
 	}
-    RX_in++;
-    if(RX_in == 2 * BUF_SIZE)
-    {
-		log_array2 = 1;
-		RX_in = 0;
-    }
-  }
-  VICVectAddr = 0;  
+	VICVectAddr = 0;
 }
 
 void FIQ_Routine(void)
 {
-  int j;
+	int j;
 
-  stat(0,ON);
-  for(j = 0; j < 5000000; j++); // TODO: Why are we using a blocking delay n ISR
-  stat(0,OFF);
-  U0RBR;  // Trash oldest byte in UART0 Rx FiFO Why??
-
-  U0IIR;  // Have to read this to clear the interrupt
-
-  // TODO: Should we be acking int here?
+	stat(0,ON);
+	for(j = 0; j < 5000000; j++); // TODO: Why are we using a blocking delay n ISR
+	stat(0,OFF);
+	U0RBR;  // Trash oldest byte in UART0 Rx FiFO Why??
+	U0IIR;  // Have to read this to clear the interrupt
+	// TODO: Should we be acking int here?
 }
 
 /*******************************************************
@@ -653,8 +583,8 @@ void FIQ_Routine(void)
 void Initialize(void)
 {
 	rprintf_devopen(putc_serial0);
-	PINSEL0 = 0xCC351505;	
-	PINSEL1 = 0x144008A9;	
+	PINSEL0 = 0xCC351505;	// 11001100 00110101 00010101 00000101
+	PINSEL1 = 0x144008A9;	// 00010100 01000000  00001000 10101001
 	IODIR0 |= 0x12101884;
 	IOSET0 = 0x00000080;  // Set P0.7 HIGH | CS0 HIGH
 	S0SPCR = 0x08;  // SPI clk to be pclk/8
@@ -788,7 +718,7 @@ void setup_uart0(int newbaud, char want_ints)
   U0FCR = 0x01;
   U0LCR = 0x03;   
 
-  if(want_ints == 1){
+  if(want_ints == 1) {
 		enableIRQ(); 					          //enable the interrupt
 		VICIntSelect &= ~0x00000040;    		  //Interrupt select register = 0000 0000 0000 0000 0000 0000 0100 0000  = Selected UART for an interrupt by assigning 0
 		VICIntEnable |= 0x00000040;    		  //Interrupt Enable Register = 0000 0000 0000 0000 0000 0000 0100 0000  = This register enable interrupt request
@@ -1387,13 +1317,9 @@ void calib_init(void){
 				  for (i=0; buffer_file[(mark+1+i)]!='\r';i++)
 				  {
 						  if(i > 9)
-						  {
 							  break;
-						  }
 						  else
-						  {
 							  gain_buf_heel[i]= buffer_file[mark+1+i];
-						  }
 				  }
 				  gain_buf_heel[i]=0;
 			          d = strtod(gain_buf_heel, &errCheck);
@@ -1573,18 +1499,6 @@ void uart0_SendChar (uint8_t en, char ch)
 		while ((U0LSR & (1<<5)) == 0); //If there is data in the buffer run while loop.
 	}
 }
-
-/*
-	====================================
-		SPI0 INITIALIZATION
-	====================================
-*/
-void SPI_Init(void)
-{
-	//PINSEL0 = PINSEL0 | 0x00001500; /* Select P0.4, P0.5, P0.6, P0.7 as SCK0, MISO0, MOSI0 and GPIO */
-	S0SPCR = 0x0020; /* SPI Master mode, 8-bit data, SPI0 mode */
-	S0SPCCR = 0x08; /* Even number, minimum value 8, pre scalar for SPI Clock */
-}
 /*
 	====================================
 		SPI1 INITIALIZATION
@@ -1611,18 +1525,6 @@ void SPI1_Write(uint8_t data)
 	while(((SSPSR & (1<<0)) == 0));
 	delay_ms(1);
 	//while (!(S0SPSR & 0x80));    		/* Wait till data transmission is completed */
-}
-
-/*
-	====================================
-			SPI0 WRITE
-	====================================
-*/
-void SPI_Write(uint8_t data)
-{
-	//char flush;
-	S0SPDR = data;  					 /* Load data to be written into the data register */
-	while (!(S0SPSR & 0x80));    		/* Wait till data transmission is completed */
 }
 
 /*
