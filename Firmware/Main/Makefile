@@ -3,6 +3,7 @@ IN2_COMMON = ..
 LIBPATH = ../lib/
 SCREENPATH = ../screens/
 USBPATH = ../LPCUSB/
+MAIN_PATH = ../Main/
 
 FLASH_TOOL = LPC12
 #FLASH_TOOL = UVISION
@@ -37,6 +38,8 @@ TARGET = main
 SRC = $(TARGET).c 
 
 #Needed most of the time for basic functions
+SRC += $(MAIN_PATH)init.c
+SRC += $(MAIN_PATH)isr.c
 SRC += $(LIBPATH)syscalls.c 
 SRC += $(LIBPATH)rprintf.c 
 SRC += $(LIBPATH)string_printf.c 
