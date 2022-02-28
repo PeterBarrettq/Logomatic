@@ -208,8 +208,9 @@ void MODE2ISR(void)
 			dev.xbee.xbee_cnt = 0;
 			/* Send Data through XBee */
 			if (dev.calibrationModeFLAG == 0) {
-				uart0_SendChar(1, dev.sensor.weight_Total+'0');
-				uart0_SendChar(1, '\n');
+				//uart0_SendChar(1, dev.sensor.weight_Total+'0');
+				//uart0_SendChar(1, '\n');
+				rprintf ("%d\r\n",dev.sensor.weight_Total);
 			}
 
 			/* Put XBee in sleep mode */
@@ -220,8 +221,6 @@ void MODE2ISR(void)
 		else if (dev.xbee.xbee_cnt == 9) {
 			wake_xbee();
 		}
-	} else {
-			uart0_SendChar(1, '3');
 	}
 
 	//      Switch    //
