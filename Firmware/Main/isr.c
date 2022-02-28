@@ -117,63 +117,62 @@ static int sample(dev_ *device, char* q, int ind, volatile unsigned long* ADxCR,
 	}
 }
 
-
-void UART0ISR(dev_ *device)
+void UART0ISR(void)
 {
-	if(device->uart.RX_in < BUF_SIZE)
+	if(dev.uart.RX_in < BUF_SIZE)
 	{
-		device->uart.RX_array1[device->uart.RX_in] = U0RBR;
-		device->uart.RX_in++;
-		if(device->uart.RX_in == BUF_SIZE)
-			device->uart.log_array1 = 1;
+		dev.uart.RX_array1[dev.uart.RX_in] = U0RBR;
+		dev.uart.RX_in++;
+		if(dev.uart.RX_in == BUF_SIZE)
+			dev.uart.log_array1 = 1;
 	}
-	else if(device->uart.RX_in >= BUF_SIZE)
+	else if(dev.uart.RX_in >= BUF_SIZE)
 	{
-		device->uart.RX_array2[device->uart.RX_in-BUF_SIZE] = U0RBR;
-		device->uart.RX_in++;
-		if(device->uart.RX_in == 2 * BUF_SIZE){
-			device->uart.log_array2 = 1;
-			device->uart.RX_in = 0;
+		dev.uart.RX_array2[dev.uart.RX_in-BUF_SIZE] = U0RBR;
+		dev.uart.RX_in++;
+		if(dev.uart.RX_in == 2 * BUF_SIZE){
+			dev.uart.log_array2 = 1;
+			dev.uart.RX_in = 0;
 		}
 	}
 	U0IIR; // Have to read this to clear the interrupt
 	VICVectAddr = 0;  // Acknowledge interrupt
 }
 
-void UART0ISR_2(dev_ *device) {
+void UART0ISR_2(void) {
   char temp;
 
 	temp = U0RBR;
 	/* Read a byte from UART0 receive buffer */
-	if(temp == device->trig){
-		device->uart.get_frame = 1;
+	if(temp == dev.trig){
+		dev.uart.get_frame = 1;
 	}
 
-	if(device->uart.get_frame) {
-		if(device->uart.RX_in < device->frame) {
-			device->uart.RX_array1[device->uart.RX_in] = temp;
-			device->uart.RX_in++;
+	if(dev.uart.get_frame) {
+		if(dev.uart.RX_in < dev.frame) {
+			dev.uart.RX_array1[dev.uart.RX_in] = temp;
+			dev.uart.RX_in++;
 
-			if(device->uart.RX_in == device->frame) {
+			if(dev.uart.RX_in == dev.frame) {
 				// Delimiters
-				device->uart.RX_array1[device->uart.RX_in] = '\n';
-				device->uart.RX_array1[device->uart.RX_in + 1] = '\r';
-				device->uart.log_array1 = 1;
-				device->uart.get_frame = 0;
+				dev.uart.RX_array1[dev.uart.RX_in] = '\n';
+				dev.uart.RX_array1[dev.uart.RX_in + 1] = '\r';
+				dev.uart.log_array1 = 1;
+				dev.uart.get_frame = 0;
 			}
 		}
-		else if(device->uart.RX_in >= device->frame) {
-			device->uart.RX_array2[device->uart.RX_in - device->frame] = temp;
-			device->uart.RX_in++;
+		else if(dev.uart.RX_in >= dev.frame) {
+			dev.uart.RX_array2[dev.uart.RX_in - dev.frame] = temp;
+			dev.uart.RX_in++;
 
-			if(device->uart.RX_in == 2*device->frame)
+			if(dev.uart.RX_in == 2*dev.frame)
 			{
 				// Delimiters
-				device->uart.RX_array2[device->uart.RX_in - device->frame] = '\n';
-				device->uart.RX_array2[device->uart.RX_in + 1 - device->frame] = '\r';
-				device->uart.log_array2 = 1;
-				device->uart.get_frame = 0;
-				device->uart.RX_in = 0;
+				dev.uart.RX_array2[dev.uart.RX_in - dev.frame] = '\n';
+				dev.uart.RX_array2[dev.uart.RX_in + 1 - dev.frame] = '\r';
+				dev.uart.log_array2 = 1;
+				dev.uart.get_frame = 0;
+				dev.uart.RX_in = 0;
 			}
 		}
 	}
@@ -183,11 +182,12 @@ void UART0ISR_2(dev_ *device) {
 	VICVectAddr = 0;  // Acknowledge interrupt
 }
 
+
 /*
  * This function handles Xbee and calibration switch
  * MODE2ISR
  */
-void MODE2ISR(dev_ *device)
+void MODE2ISR(void)
 {
 	int ind = 0;
 	int j;
@@ -197,19 +197,18 @@ void MODE2ISR(dev_ *device)
 	for(j = 0; j < 50; j++)
 		q[j] = 0;
 
-	#define SAMPLE(X, BIT) ind = sample(device, q, ind, &AD##X##CR, &AD##X##DR, 1 << BIT, device->ad##X##_##BIT)
+	#define SAMPLE(X, BIT) ind = sample(&dev, q, ind, &AD##X##CR, &AD##X##DR, 1 << BIT, dev.ad##X##_##BIT)
 
 	/*Every 100ms send the data on the XBee*/
-	if (device->freq == 100) {
-		++device->xbee.xbee_cnt;
+	if (dev.freq == 100) {
+		++dev.xbee.xbee_cnt;
 
 		/*CASE 1:Send the data and put XBee in sleep mode*/
-		if (device->xbee.xbee_cnt > XBEE_TICKS ) {
-			device->xbee.xbee_cnt = 0;
-
+		if (dev.xbee.xbee_cnt > XBEE_TICKS ) {
+			dev.xbee.xbee_cnt = 0;
 			/* Send Data through XBee */
-			if (device->calibrationModeFLAG == 0) {
-				uart0_SendChar(1, device->sensor.weight_Total+'0');
+			if (dev.calibrationModeFLAG == 0) {
+				uart0_SendChar(1, dev.sensor.weight_Total+'0');
 				uart0_SendChar(1, '\n');
 			}
 
@@ -218,51 +217,53 @@ void MODE2ISR(dev_ *device)
 		}
 
 		/* CASE 2:Wake up XBee for sending the data */
-		else if (device->xbee.xbee_cnt == 9) {
+		else if (dev.xbee.xbee_cnt == 9) {
 			wake_xbee();
 		}
+	} else {
+			uart0_SendChar(1, '3');
 	}
 
 	//      Switch    //
-	if (device->calibsw.SwCount >CALIB_TIME) {
-		device->calibsw.SwCount = 0;
-		device->calibsw.timerFLAG = 0;
+	if (dev.calibsw.SwCount >CALIB_TIME) {
+		dev.calibsw.SwCount = 0;
+		dev.calibsw.timerFLAG = 0;
 	}
 	else {
 		//timerFlag means timer is working
-		if (device->calibsw.timerFLAG == 1)
-			++device->calibsw.SwCount;
+		if (dev.calibsw.timerFLAG == 1)
+			++dev.calibsw.SwCount;
 
 		// first capture starts on first 5 seconds of the startup.
-		if (device->calibsw.firstCapture == 1) {
-			if (device->calibsw.swHighCount > 0) {
+		if (dev.calibsw.firstCapture == 1) {
+			if (dev.calibsw.swHighCount > 0) {
 				/* reset counters */
-				device->calibsw.SwCount = 0;
+				dev.calibsw.SwCount = 0;
 
 				/* disable timer for switch */
-				device->calibsw.timerFLAG = 0;
+				dev.calibsw.timerFLAG = 0;
 
 				/* disable first capture */
-				device->calibsw.firstCapture = 0;
+				dev.calibsw.firstCapture = 0;
 
 				/* restart counting once again */
-				device->calibsw.swHighCount = 0;
+				dev.calibsw.swHighCount = 0;
 
 				/* flash calib_LED and re-enable timer after flashing LED */
-				device->calibrationModeFLAG = 1;
+				dev.calibrationModeFLAG = 1;
 			}
 		}
 		/* 1 press detected =  scan heel value of 10 = program the digipot only for heel = flash led
 		*scan fft value for 10 = program the FFT  = flash led ...
 		*capture no of switch press wait till timer 5 second is finished and timerFlag becomes 0
 		*/
-		if (device->calibsw.secondCapture == 1) {
-			if (device->calibsw.timerFLAG == 0) {
+		if (dev.calibsw.secondCapture == 1) {
+			if (dev.calibsw.timerFLAG == 0) {
 				//second capture time is completed
-				device->calibsw.secondCapture = 0;
+				dev.calibsw.secondCapture = 0;
 
 				// now programming the Digipots.
-				device->calibsw.calibrateSensor_FLAG = 1;
+				dev.calibsw.calibrateSensor_FLAG = 1;
 			}
 		}
 	}
@@ -271,45 +272,45 @@ void MODE2ISR(dev_ *device)
 	*/
 	/* HIGH Logic */
 	if  ( ( ( IOPIN0 & (1U<<Calib) ) == 0)
-			&& (device->calibsw.SwFlag==0) && (device->calibsw.timerFLAG == 1) ) {
+			&& (dev.calibsw.SwFlag==0) && (dev.calibsw.timerFLAG == 1) ) {
 
-		device->calibsw.countL = 0;
-		++device->calibsw.countH;
+		dev.calibsw.countL = 0;
+		++dev.calibsw.countH;
 		/* 40ms Debouncing */
-		if (device->calibsw.countH > 10) {
-			device->calibsw.SwFlag = 1;
-			device->calibsw.swHighCount++;
+		if (dev.calibsw.countH > 10) {
+			dev.calibsw.SwFlag = 1;
+			dev.calibsw.swHighCount++;
 
 			//reset flags
-			device->calibsw.countL = 0;
-			device->calibsw.countH = 0;
+			dev.calibsw.countL = 0;
+			dev.calibsw.countH = 0;
 		}
 	}
 	/* LOW Logic */
-	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (device->calibsw.SwFlag==1) && (device->calibsw.timerFLAG == 1) )
+	if  ( ( ( IOPIN0 & (1U<<Calib) ) != 0) && (dev.calibsw.SwFlag==1) && (dev.calibsw.timerFLAG == 1) )
 	{
-		device->calibsw.countH = 0;
-		++device->calibsw.countL;
-		if (device->calibsw.countL > 10) {
-			device->calibsw.SwFlag = 0;
+		dev.calibsw.countH = 0;
+		++dev.calibsw.countL;
+		if (dev.calibsw.countL > 10) {
+			dev.calibsw.SwFlag = 0;
 
 			//reset flags
-			device->calibsw.countH = 0;
-			device->calibsw.countL = 0;
+			dev.calibsw.countH = 0;
+			dev.calibsw.countL = 0;
 		}
 	}
 
 	/*
 	* This condition creates log file 10 seconds after startup
 	*/
-	if (device->log.start_log_timer == 1) {
-		if (device->log.log_enable_cnt > 1000) {
-			device->log.create_log_file=1;
-			device->log.log_enable_cnt = 0;
-			device->log.start_log_timer=0;
+	if (dev.log.start_log_timer == 1) {
+		if (dev.log.log_enable_cnt > 1000) {
+			dev.log.create_log_file=1;
+			dev.log.log_enable_cnt = 0;
+			dev.log.start_log_timer=0;
 		}
 		else {
-			device->log.log_enable_cnt++;
+			dev.log.log_enable_cnt++;
 		}
 	}
 	SAMPLE(1, 3); //AD1.3
@@ -325,71 +326,71 @@ void MODE2ISR(dev_ *device)
 	for(j = 0; j < ind; j++)
 	{
 		//less than buf size
-		if(device->uart.RX_in < BUF_SIZE)
+		if(dev.uart.RX_in < BUF_SIZE)
 		{
-			device->uart.RX_array1[device->uart.RX_in] = q[j];
-			device->uart.RX_in++;
+			dev.uart.RX_array1[dev.uart.RX_in] = q[j];
+			dev.uart.RX_in++;
 
-			if(device->uart.RX_in == BUF_SIZE)
+			if(dev.uart.RX_in == BUF_SIZE)
 			{
-				device->uart.log_array1 = 1;
+				dev.uart.log_array1 = 1;
 			}	//Raise Log_Array1 FLAG HIGH if Rx_array1 buffer is FULL.
 		}
 		//buffer overflow handling
-		else if(device->uart.RX_in >= BUF_SIZE) {
-			device->uart.RX_array2[device->uart.RX_in - BUF_SIZE] = q[j];
-			device->uart.RX_in++;
+		else if(dev.uart.RX_in >= BUF_SIZE) {
+			dev.uart.RX_array2[dev.uart.RX_in - BUF_SIZE] = q[j];
+			dev.uart.RX_in++;
 
 			//if buffer is full raise the log_array2 flag
-			if(device->uart.RX_in == 2 * BUF_SIZE) {
-					device->uart.log_array2 = 1;
-					device->uart.RX_in = 0;   // CLEAR THE COUNTS
+			if(dev.uart.RX_in == 2 * BUF_SIZE) {
+					dev.uart.log_array2 = 1;
+					dev.uart.RX_in = 0;   // CLEAR THE COUNTS
 			}
 		}
 	}
-	if(device->uart.RX_in < BUF_SIZE)
+	if(dev.uart.RX_in < BUF_SIZE)
 	{
-		if(device->asc == 'N')
-			device->uart.RX_array1[device->uart.RX_in] = '$';
-		else if(device->asc == 'Y')
-			device->uart.RX_array1[device->uart.RX_in] = 13;
+		if(dev.asc == 'N')
+			dev.uart.RX_array1[dev.uart.RX_in] = '$';
+		else if(dev.asc == 'Y')
+			dev.uart.RX_array1[dev.uart.RX_in] = 13;
 
-		device->uart.RX_in++;
-		if(device->uart.RX_in == BUF_SIZE)
-			device->uart.log_array1 = 1;
+		dev.uart.RX_in++;
+		if(dev.uart.RX_in == BUF_SIZE)
+			dev.uart.log_array1 = 1;
 	}
-	else if(device->uart.RX_in >= BUF_SIZE)
+	else if(dev.uart.RX_in >= BUF_SIZE)
 	{
-		if(device->asc == 'N')
-			device->uart.RX_array2[device->uart.RX_in - BUF_SIZE] = '$';
-		else if(device->asc == 'Y')
-			device->uart.RX_array2[device->uart.RX_in - BUF_SIZE] = 13;
-		device->uart.RX_in++;
+		if(dev.asc == 'N')
+			dev.uart.RX_array2[dev.uart.RX_in - BUF_SIZE] = '$';
+		else if(dev.asc == 'Y')
+			dev.uart.RX_array2[dev.uart.RX_in - BUF_SIZE] = 13;
+		dev.uart.RX_in++;
 
-		if(device->uart.RX_in == 2 * BUF_SIZE) {
-			device->uart.log_array2 = 1;
-			device->uart.RX_in = 0;
+		if(dev.uart.RX_in == 2 * BUF_SIZE) {
+			dev.uart.log_array2 = 1;
+			dev.uart.RX_in = 0;
 		}
 	}
-	if(device->uart.RX_in < BUF_SIZE) {
-		if(device->asc == 'N')
-			device->uart.RX_array1[device->uart.RX_in] = '$';
-		else if(device->asc == 'Y')
-			device->uart.RX_array1[device->uart.RX_in] = 10;
-		device->uart.RX_in++;
-		if(device->uart.RX_in == BUF_SIZE)
-			device->uart.log_array1 = 1;
+	if(dev.uart.RX_in < BUF_SIZE) {
+		if(dev.asc == 'N')
+			dev.uart.RX_array1[dev.uart.RX_in] = '$';
+		else if(dev.asc == 'Y')
+			dev.uart.RX_array1[dev.uart.RX_in] = 10;
+		dev.uart.RX_in++;
+		if(dev.uart.RX_in == BUF_SIZE)
+			dev.uart.log_array1 = 1;
 	}
 
-	else if(device->uart.RX_in >= BUF_SIZE) {
-		if(device->asc == 'N')
-			device->uart.RX_array2[device->uart.RX_in - BUF_SIZE] = '$';
-		else if(device->asc == 'Y')
-			device->uart.RX_array2[device->uart.RX_in - BUF_SIZE] = 10;
-		device->uart.RX_in++;
-		if(device->uart.RX_in == 2 * BUF_SIZE) {
-			device->uart.log_array2 = 1;
-			device->uart.RX_in = 0;
+	else if(dev.uart.RX_in >= BUF_SIZE) {
+		if(dev.asc == 'N')
+			dev.uart.RX_array2[dev.uart.RX_in - BUF_SIZE] = '$';
+		else if(dev.asc == 'Y')
+			dev.uart.RX_array2[dev.uart.RX_in - BUF_SIZE] = 10;
+		dev.uart.RX_in++;
+		if(dev.uart.RX_in == 2 * BUF_SIZE) {
+			dev.uart.log_array2 = 1;
+			dev.uart.RX_in = 0;
 		}
 	}
 	VICVectAddr = 0;

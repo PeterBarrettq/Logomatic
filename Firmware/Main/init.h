@@ -119,12 +119,12 @@ typedef struct _dev_ {
 	calibsw_ calibsw;
 	_uart uart;
 }dev_;
-
+dev_ dev;
 
 calib s1,s2;
-void UART0ISR(dev_ *device);
-void UART0ISR_2(dev_ *device);
-void MODE2ISR(dev_ *device);
+void UART0ISR(void);
+void UART0ISR_2(void);
+void MODE2ISR(void);
 void setup_uart0(dev_ *device, int newbaud, char want_ints);
 void Log_init (dev_ *device);
 void Initialize(dev_ *device);

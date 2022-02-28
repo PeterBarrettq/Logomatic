@@ -56,17 +56,16 @@ struct fat_file_struct* cfg1;
 //CCLK = PCLK =  12x4=48Mhz , hence 48 Mhz is a peripheral clock
 int main (void)
 {
-	dev_ device;
 	int i;
 	char filename[32];
 	memset (&s1,0,sizeof(s1));
 	memset (&s1,0,sizeof(s2));
 	enableFIQ();
-	Initialize (&device);
-	setup_uart0 (&device, 9600, 0);
+	Initialize (&dev);
+	setup_uart0 (&dev, 9600, 0);
 	SPI1_Init();
 	fat_initialize();
-	print_init_values(&device);
+	print_init_values(&dev);
 
 	/* Flash Status Lights */
 	for(i = 0; i < 5; i++){
@@ -77,7 +76,7 @@ int main (void)
 		delay_ms(50);
 		stat(1,OFF);
 	}
-	Log_init(&device);
+	Log_init(&dev);
 	calib_init();
 	string_printf(filename,"CALIB02.txt");
 
@@ -89,14 +88,14 @@ int main (void)
 		uart0_SendString (DEBUG_LOGOMATIC,"\r\nFile don't exist.");
 	}
 
-	print_init_values(&device);
+	print_init_values(&dev);
 
-	if(device.mode==0)
-		mode_0(&device);
-	else if(device.mode==1)
-		mode_1(&device);
-	else if(device.mode==2)
-		mode_2(&device);
+	if(dev.mode==0)
+		mode_0(&dev);
+	else if(dev.mode==1)
+		mode_1(&dev);
+	else if(dev.mode==2)
+		mode_2(&dev);
 	return 0;
 }
 
@@ -106,7 +105,7 @@ void print_init_values (dev_ *device)
 	rprintf ("asc = %c\r\n",device->asc);
 	rprintf ("baud = %d\r\n",device->baud);
 	rprintf ("freq = %d\r\n",device->freq);
-	rprintf ("trig = %d\r\n",device->trig);
+	rprintf ("trig = %c\r\n",device->trig);
 	rprintf ("frame = %d\r\n",device->frame);
 	rprintf ("ad1_7 = %c\r\n",device->ad1_7);
 	rprintf ("ad1_6 = %c\r\n",device->ad1_6);
@@ -198,195 +197,201 @@ void mode_2 (dev_ *device)
 }
 
 /*
- * This function normal routine of LOGOMATIC
- */
+* This function normal routine of LOGOMATIC
+*/
 void mode_action(dev_ *device)
 {
-  while(1)
-  {
-	/*
-	 * Calibration Mode Detected 
-	 */
-	if (device->calibrationModeFLAG == 1)
+	while(1)
 	{
-		if (flash_Calib_led == 1)
+		/*
+		* Calibration Mode Detected
+		*/
+		if (device->calibrationModeFLAG == 1)
 		{
-			uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-			flash_CalibLED(1);
-			
-			/*Enabling timer and check for switches in second capture.*/
-			device->calibsw.timerFLAG =1;
-			device->calibsw.secondCapture = 1;
-			flash_Calib_led = 0;
-			uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-		}
-		if (device->calibsw.calibrateSensor_FLAG == 1)
-		{
-			uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
-			uart0_SendString (DEBUG_LOGOMATIC,"\r\nNumber of Switch Pressed="); uart0_SendChar (DEBUG_LOGOMATIC,device->calibsw.swHighCount+48);
-			flash_CalibLED(2);
-			/* Read switch count here 
-			 * Check heel and fft here
-			 * Check if not equal to zero then continue
-			 * Increase steps till 30 output is 10.
-			 * Flash LED...
-			 * Heel Weight 
-			 */
-			switch (device->calibsw.swHighCount)
+			if (flash_Calib_led == 1)
 			{
-				case 1:
-					uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 1 times.");
-					calibrate_load_cell(&s1, FFT_TYPE,10.0,"FFT sensor");
-					flash_CalibLED(3);
-					uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
-					delay_ms(6000); //6s delay
-					flash_CalibLED(4);
-					calibrate_load_cell(&s2,HEEL_TYPE,10.0,"HEEL sensor");
-					write_sd_card(s1.gain, s2.gain);
-					flash_CalibLED(5);
-					break;
-				case 2:
-					uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 2 times.");
-					calibrate_load_cell(&s1, FFT_TYPE,20.0,"FFT sensor");
-					flash_CalibLED(3);
-					uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
-					delay_ms(6000); //6s delay
-					flash_CalibLED(4);
-					calibrate_load_cell(&s2, HEEL_TYPE,20.0,"HEEL sensor");
-					write_sd_card(s1.gain, s2.gain);
-					flash_CalibLED(5);
-					break;
-				case 3:
-					uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 3 times.");
-					calibrate_load_cell(&s1,FFT_TYPE,30.0,"FFT sensor");
-					uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
-					flash_CalibLED(3);
-					delay_ms(6000); //6s delay
-					flash_CalibLED(4);
-					calibrate_load_cell(&s2,HEEL_TYPE,30.0,"HEEL sensor");
-					write_sd_card(s1.gain, s2.gain);
-					flash_CalibLED(5);
-					break;
-				default:
-					break;
+				uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>Entered in calibration mode<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+				flash_CalibLED(1);
+
+				/*Enabling timer and check for switches in second capture.*/
+				device->calibsw.timerFLAG =1;
+				device->calibsw.secondCapture = 1;
+				flash_Calib_led = 0;
+				uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time started<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 			}
-			// calibration completed
-			device->calibrationModeFLAG = 0;
-			device->calibsw.calibrateSensor_FLAG =0;
-		}
-	}
-	/*Normal Condition*/
-	else
-	{
-#ifdef ENABLE_SD_LOGS
-		long j=0;
-		/* 10s UP after startup then create new log file */
-		if (device->log.create_log_file == 1)
-		{
-			if ((device->calibsw.secondCapture==0) && (device->calibsw.calibrateSensor_FLAG==0) &&
-					(device->calibrationModeFLAG==0) && (device->calibsw.timerFLAG==0))
+			if (device->calibsw.calibrateSensor_FLAG == 1)
 			{
-				char name[32];
-				int count = 0;
-				count++;
-				string_printf(name,"LOG%02d.txt",count);
-				fat_close_file(cfg);
-				while(root_file_exists(name))
+				uart0_SendString (DEBUG_LOGOMATIC,"\r\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>second capture time finished<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
+				uart0_SendString (DEBUG_LOGOMATIC,"\r\nNumber of Switch Pressed="); uart0_SendChar (DEBUG_LOGOMATIC,device->calibsw.swHighCount+48);
+				flash_CalibLED(2);
+				/* Read switch count here
+				* Check heel and fft here
+				* Check if not equal to zero then continue
+				* Increase steps till 30 output is 10.
+				* Flash LED...
+				* Heel Weight
+				*/
+				switch (device->calibsw.swHighCount)
 				{
+					case 1:
+						uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 1 times.");
+						calibrate_load_cell(&s1, FFT_TYPE,10.0,"FFT sensor");
+						flash_CalibLED(3);
+						uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
+						delay_ms(6000); //6s delay
+						flash_CalibLED(4);
+						calibrate_load_cell(&s2,HEEL_TYPE,10.0,"HEEL sensor");
+						write_sd_card(s1.gain, s2.gain);
+						flash_CalibLED(5);
+						break;
+					case 2:
+						uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 2 times.");
+						calibrate_load_cell(&s1, FFT_TYPE,20.0,"FFT sensor");
+						flash_CalibLED(3);
+						uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
+						delay_ms(6000); //6s delay
+						flash_CalibLED(4);
+						calibrate_load_cell(&s2, HEEL_TYPE,20.0,"HEEL sensor");
+						write_sd_card(s1.gain, s2.gain);
+						flash_CalibLED(5);
+						break;
+					case 3:
+						uart0_SendString (DEBUG_LOGOMATIC,"\r\n SW: Pressed 3 times.");
+						calibrate_load_cell(&s1,FFT_TYPE,30.0,"FFT sensor");
+						uart0_SendString (DEBUG_LOGOMATIC,"\r\n Wait for 6 seconds");
+						flash_CalibLED(3);
+						delay_ms(6000); //6s delay
+						flash_CalibLED(4);
+						calibrate_load_cell(&s2,HEEL_TYPE,30.0,"HEEL sensor");
+						write_sd_card(s1.gain, s2.gain);
+						flash_CalibLED(5);
+						break;
+					default:
+						break;
+				}
+				// calibration completed
+				device->calibrationModeFLAG = 0;
+				device->calibsw.calibrateSensor_FLAG =0;
+			}
+		}
+		/*Normal Condition*/
+		else
+		{
+#ifdef ENABLE_SD_LOGS
+			long j=0;
+
+			/* 10s UP after startup then create new log file */
+			if (device->log.create_log_file == 1)
+			{
+//				rprintf ("if (device->log.create_log_file == 1)\r\n");
+				if ((device->calibsw.secondCapture==0) && (device->calibsw.calibrateSensor_FLAG==0) &&
+						(device->calibrationModeFLAG==0) && (device->calibsw.timerFLAG==0))
+				{
+//					rprintf ("if (device->log.create_log_file == 1)->check2\r\n");
+					char name[32];
+					int count = 0;
 					count++;
-					if(count == 250)
+					string_printf(name,"LOG%02d.txt",count);
+					fat_close_file(cfg);
+					while(root_file_exists(name))
+					{
+						count++;
+						if(count == 250)
+						{
+							while(1)
+							{
+								stat(0,ON);
+								stat(1,ON);
+								delay_ms(1000);
+								stat(0,OFF);
+								stat(1,OFF);
+								delay_ms(1000);
+							}
+						}
+						string_printf(name,"LOG%02d.txt",count);
+					}
+					handle = root_open_new(name);
+					sd_raw_sync();
+					device->log.create_log_file=0;
+					device->log.savelogs=1;
+				}
+			}
+
+			/* Start saving the LOGS */
+			if (device->log.savelogs == 1)
+			{
+//				rprintf ("if (device->log.savelogs)\r\n");
+				if(device->uart.log_array1 == 1)
+				{
+//					rprintf ("if(device->uart.log_array1 == 1)\r\n");
+					stat(0,ON);
+					/* print the data on the console before saving in sd-card */
+					/*WRITE THE RX_array1 values in the SD_CARD as it full */
+					if(fat_write_file(handle,(unsigned char *)device->uart.RX_array1, device->log.stringSize) < 0)
 					{
 						while(1)
 						{
 							stat(0,ON);
-							stat(1,ON);
-							delay_ms(1000);
+							for(j = 0; j < 500000; j++);
 							stat(0,OFF);
+							stat(1,ON);
+							for(j = 0; j < 500000; j++);
 							stat(1,OFF);
-							delay_ms(1000);
 						}
 					}
-					string_printf(name,"LOG%02d.txt",count);
+					sd_raw_sync();
+					stat(0,OFF);
+					device->uart.log_array1 = 0;
 				}
-				handle = root_open_new(name);
-				sd_raw_sync();
-				device->log.create_log_file=0;
-				device->log.savelogs=1;
-			}
-		}
 
-		/* Start saving the LOGS */
-		if (device->log.savelogs == 1)
-		{
-			if(device->uart.log_array1 == 1)
-			{
-				stat(0,ON);
-				/* print the data on the console before saving in sd-card */
-				/*WRITE THE RX_array1 values in the SD_CARD as it full */
-				if(fat_write_file(handle,(unsigned char *)device->uart.RX_array1, device->log.stringSize) < 0)
+				if(device->uart.log_array2 == 1)
 				{
-					while(1)
+//					rprintf ("if(device->uart.log_array2 == 1)\r\n");
+					stat(1,ON);
+					/* print the data on the console before saving in sd-card*/
+					/* WRITE THE RX_array2 values in the SD_CARD as it full */
+					if(fat_write_file(handle,(unsigned char *)device->uart.RX_array2, device->log.stringSize) < 0)
 					{
-					  stat(0,ON);
-					  for(j = 0; j < 500000; j++);
-					  stat(0,OFF);
-					  stat(1,ON);
-					  for(j = 0; j < 500000; j++);
-					  stat(1,OFF);
+						while(1)
+						{
+							stat(0,ON);
+							for(j = 0; j < 500000; j++);
+							stat(0,OFF);
+							stat(1,ON);
+							for(j = 0; j < 500000; j++);
+							stat(1,OFF);
+						}
 					}
+					sd_raw_sync();
+					stat(1,OFF);
+					device->uart.log_array2 = 0;
 				}
-				sd_raw_sync();
-				stat(0,OFF);
-				device->uart.log_array1 = 0;
-			}
-
-			if(device->uart.log_array2 == 1)
-			{
-				stat(1,ON);
-				/* print the data on the console before saving in sd-card*/
-				/* WRITE THE RX_array2 values in the SD_CARD as it full */
-				if(fat_write_file(handle,(unsigned char *)device->uart.RX_array2, device->log.stringSize) < 0)
+				/* STOP Button Condition */
+				if((IOPIN0 & 0x00000008) == 0)
 				{
-					while(1)
+					uart0_SendString (DEBUG_LOGOMATIC,"\r\nSTOP BT Pressed!");
+					VICIntEnClr = 0xFFFFFFFF;
+
+					if(device->uart.RX_in < BUF_SIZE)
 					{
+						fat_write_file(handle, (unsigned char *)device->uart.RX_array1, device->uart.RX_in);
+						sd_raw_sync();
+					}
+					else if(device->uart.RX_in >= BUF_SIZE)
+					{
+						fat_write_file(handle, (unsigned char *)device->uart.RX_array2, device->uart.RX_in - BUF_SIZE);
+						sd_raw_sync();
+					}
+					while(1) {
 						stat(0,ON);
 						for(j = 0; j < 500000; j++);
-						stat(0,OFF);
-						stat(1,ON);
+							stat(0,OFF);
+							stat(1,ON);
 						for(j = 0; j < 500000; j++);
-						stat(1,OFF);
+							stat(1,OFF);
 					}
-			  }
-			  sd_raw_sync();
-			  stat(1,OFF);
-			  device->uart.log_array2 = 0;
-			}
-			/* STOP Button Condition */
-			if((IOPIN0 & 0x00000008) == 0)
-			{
-				uart0_SendString (DEBUG_LOGOMATIC,"\r\nSTOP BT Pressed!");
-				VICIntEnClr = 0xFFFFFFFF;
-
-				if(device->uart.RX_in < BUF_SIZE)
-				{
-					fat_write_file(handle, (unsigned char *)device->uart.RX_array1, device->uart.RX_in);
-					sd_raw_sync();
-				}
-				else if(device->uart.RX_in >= BUF_SIZE)
-				{
-					fat_write_file(handle, (unsigned char *)device->uart.RX_array2, device->uart.RX_in - BUF_SIZE);
-					sd_raw_sync();
-				}
-				while(1){
-					stat(0,ON);
-					for(j = 0; j < 500000; j++);
-					stat(0,OFF);
-					stat(1,ON);
-					for(j = 0; j < 500000; j++);
-					stat(1,OFF);
 				}
 			}
-		}
 #endif
 		}
 	}
