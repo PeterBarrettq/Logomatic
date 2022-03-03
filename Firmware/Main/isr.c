@@ -74,6 +74,8 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 			device->sensor.battery_volts = (((float)value/device->sensor.adc_resolution)*
 					device->sensor.adc_ref_volts)/device->sensor.resistor_ratio;
 			device->sensor.battery_percent = (int)((device->sensor.battery_volts/4.2)*100.0);
+			if (device->sensor.battery_percent > 100)
+				device->sensor.battery_percent = 100;
 		}
 		//all other pins except A0.2 and A0.3
 		else {
@@ -219,7 +221,7 @@ void MODE2ISR(void)
 			dev.xbee.xbee_cnt = 0;
 			/* Send Data through XBee */
 			if (dev.calibrationModeFLAG == 0) {
-				rprintf ("%d,%d\r\n",dev.sensor.weight_Total,dev.sensor.battery_percent);
+				rprintf ("%d,%d",dev.sensor.weight_Total,dev.sensor.battery_percent);
 			}
 
 			/* Put XBee in sleep mode */
