@@ -16,9 +16,8 @@
 #define GPIO0_13_AD1_4	(0x03<<26) // 11
 #define GPIO0_14_IO	(0x00<<28) // 00
 #define GPIO0_15_AD1_5	(0x03<<30) // 11
-//0xCC351505
-struct fat_file_struct* fd;
 
+struct fat_file_struct* fd;
 
 void fat_initialize(void)
 {

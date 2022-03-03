@@ -71,10 +71,11 @@ typedef struct _log {
 typedef struct _sensor {
 	float heel_weight, fft_weight;
 	int weight_Total;
-	uint8_t k, iter;
+	uint8_t k, iter1,iter2;
 	uint16_t total_WeightTemp;
 	float battery_volts;
 	int battery_percent;
+	int battery_per_temp;
 	float resistor_ratio;
 	float adc_resolution;
 	float adc_ref_volts;

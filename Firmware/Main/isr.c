@@ -5,7 +5,17 @@
  *      Author: SAR Computer
  */
 #include "isr.h"
-static uint8_t WeightAvg[20];
+static int WeightAvg[NUM_AVERAGE]={};
+static int BatteryAvg[NUM_AVERAGE]={};
+
+static int sensor_avg (int arr[], int average_cnt) {
+	int k = 0, total=0;
+	for (k=0; k<average_cnt; k++)
+		total+=arr[k];
+	total /= average_cnt;
+	return total;
+}
+
 
 static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile unsigned long* ADxCR, int mask)
 {
@@ -52,30 +62,36 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 			 *	Send Data on ZigBee
 			 */
 
-			//Gather total weight for average
+			//Convert Heel and FFT to total weight
 			device->sensor.total_WeightTemp = (float)(device->sensor.heel_weight + device->sensor.fft_weight);
-
-			//code to do with sending Total data (Heel + Fft)via UART
 			if (device->sensor.total_WeightTemp > 255)
 				device->sensor.total_WeightTemp = 255;
 
-			WeightAvg[device->sensor.iter++] = (unsigned char)(device->sensor.total_WeightTemp);
+			//Collect all the samples
+			WeightAvg[device->sensor.iter1++] = (int)(device->sensor.total_WeightTemp);
 
-			//Take average of only 16 samples....
-			if (device->sensor.iter > NUM_AVERAGE) {
-				device->sensor.iter = 0;
-				for (device->sensor.k=0; device->sensor.k<NUM_AVERAGE; device->sensor.k++)
-					device->sensor.weight_Total += WeightAvg[device->sensor.k];
-
-				device->sensor.weight_Total = device->sensor.weight_Total/NUM_AVERAGE; //Divide by 16
+			//Average out the samples
+			if (device->sensor.iter1 > NUM_AVERAGE) {
+				device->sensor.iter1 = 0;
+				device->sensor.weight_Total = sensor_avg (WeightAvg, NUM_AVERAGE);
 			}
 		}
 		else if ((ADxCR == (unsigned long*)AD1CR_REG_ADDR) && (mask == 16)) {
 			device->sensor.battery_volts = (((float)value/device->sensor.adc_resolution)*
 					device->sensor.adc_ref_volts)/device->sensor.resistor_ratio;
-			device->sensor.battery_percent = (int)((device->sensor.battery_volts/4.2)*100.0);
-			if (device->sensor.battery_percent > 100)
-				device->sensor.battery_percent = 100;
+			//Convert batt voltages to percent
+			device->sensor.battery_per_temp = device->sensor.battery_percent = (int)((device->sensor.battery_volts/4.2)*100.0);
+			if (device->sensor.battery_per_temp > 100)
+				device->sensor.battery_per_temp = 100;
+			//Collect all the samples
+			BatteryAvg[device->sensor.iter2++] = device->sensor.battery_per_temp;
+			//Average out the samples
+			if (device->sensor.iter2 > NUM_AVERAGE) {
+				device->sensor.iter2 = 0;
+				device->sensor.battery_percent = sensor_avg(BatteryAvg, NUM_AVERAGE);
+
+			}
+
 		}
 		//all other pins except A0.2 and A0.3
 		else {
@@ -221,7 +237,7 @@ void MODE2ISR(void)
 			dev.xbee.xbee_cnt = 0;
 			/* Send Data through XBee */
 			if (dev.calibrationModeFLAG == 0) {
-				rprintf ("%d,%d",dev.sensor.weight_Total,dev.sensor.battery_percent);
+				rprintf ("%d,%d\n",dev.sensor.weight_Total,dev.sensor.battery_percent);
 			}
 
 			/* Put XBee in sleep mode */

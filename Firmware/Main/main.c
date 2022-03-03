@@ -125,7 +125,7 @@ void print_init_values (dev_ *device)
 	rprintf ("heel_weight = %d\r\n",device->sensor.heel_weight);
 	rprintf ("fft_weight = %d\r\n",device->sensor.fft_weight);
 	rprintf ("weight_Total = %d\r\n",device->sensor.weight_Total);
-	rprintf ("iter = %d\r\n",device->sensor.iter);
+	rprintf ("iter = %d\r\n",device->sensor.iter1);
 	rprintf ("k = %d\r\n",device->sensor.k);
 	rprintf ("total_WeightTemp",device->sensor.total_WeightTemp);
 
