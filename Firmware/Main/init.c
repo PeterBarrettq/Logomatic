@@ -1,5 +1,22 @@
 #include "init.h"
 
+#define GPIO0_0_TXD0	(0x00<<0)  // 00
+#define GPIO0_1_RXD0	(0x01<<2)  // 00
+#define GPIO0_2_IO	(0x00<<4)  // 00
+#define GPIO0_3_IO	(0x00<<6)  // 00
+#define GPIO0_4_SCK0	(0x01<<8)  // 01
+#define GPIO0_5_MISO0	(0x01<<10) // 01
+#define GPIO0_6_MOSI0	(0x01<<12) // 01
+#define GPIO0_7_IO	(0x00<<14) // 00
+#define GPIO0_8_TXD1_10	(0x01<<16) // 01
+#define GPIO0_9_RXD1_10	(0x01<<18) // 01
+#define GPIO0_10_IO	(0x03<<20) // 11
+#define GPIO0_11_IO	(0x00<<22) // 00
+#define GPIO0_12_IO	(0x00<<24) // 00
+#define GPIO0_13_AD1_4	(0x03<<26) // 11
+#define GPIO0_14_IO	(0x00<<28) // 00
+#define GPIO0_15_AD1_5	(0x03<<30) // 11
+//0xCC351505
 struct fat_file_struct* fd;
 
 
@@ -28,15 +45,20 @@ void Initialize(dev_ *device)
 	device->ad1_2 = 'N';
 	device->ad1_3 = 'N';
 	device->ad1_6 = 'N';
+	device->ad1_4 = 'Y';
 	device->ad1_7 = 'N';
 	device->log.start_log_timer = 1;
 	device->calibsw.timerFLAG = 1;
 	device->calibsw.firstCapture=1;
 	device->calibsw.secondCapture=0;
+	device->sensor.battery_percent=0;
+	device->sensor.resistor_ratio=0.5;
+	device->sensor.adc_resolution=1024.0;
+	device->sensor.adc_ref_volts=3.3;
 	rprintf_devopen(putc_serial0);
-	PINSEL0 = 0xCC351505;	// 11001100 00110101 00010101 00000101
-	PINSEL1 = 0x144008A9;	// 00010100 01000000  00001000 10101001
-	IODIR0 |= 0x12101884;
+	PINSEL0 = 0xCC351505;
+	PINSEL1 = 0x144008A9;
+	IODIR0 |= 0x12101884;   // 00010010 00010000 00011000 10000100 [0-input 1-output]
 	IOSET0 = 0x00000080;  // Set P0.7 HIGH | CS0 HIGH
 	S0SPCR = 0x08;  // SPI clk to be pclk/8
 	S0SPCR = 0x30;  // master, msb, first clk edge, active high, no ints
@@ -246,6 +268,8 @@ void Log_init (dev_ *device)
 			else if(ind == 15) {
 				safety = device->log.stringBuf[mark-2]; // default is 'Y'
 			}
+			/* Hard coded this for battery sensing */
+			device->ad1_4 = 'Y';
 		}
 	}
 

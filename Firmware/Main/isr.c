@@ -23,7 +23,10 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 				NoOfBytes = strlen(p) + ind + 1;
 			} else {
 				device->sensor.heel_weight = 0.0;
-				p[0]='0'; p[1]='.'; p[2]='0'; p[3]='\0';
+				p[0]='0';
+				p[1]='.';
+				p[2]='0';
+				p[3]='\0';
 				NoOfBytes = strlen(p) + ind + 1;
 			}
 		}
@@ -38,7 +41,10 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 			}
 			else {
 				device->sensor.fft_weight = 0.0;
-				p[0]='0';p[1]='.';p[2]='0';p[3]='\0';
+				p[0]='0';
+				p[1]='.';
+				p[2]='0';
+				p[3]='\0';
 				NoOfBytes = strlen(p) + ind + 1;
 			}
 
@@ -63,6 +69,11 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 
 				device->sensor.weight_Total = device->sensor.weight_Total/NUM_AVERAGE; //Divide by 16
 			}
+		}
+		else if ((ADxCR == (unsigned long*)AD1CR_REG_ADDR) && (mask == 16)) {
+			device->sensor.battery_volts = (((float)value/device->sensor.adc_resolution)*
+					device->sensor.adc_ref_volts)/device->sensor.resistor_ratio;
+			device->sensor.battery_percent = (int)((device->sensor.battery_volts/4.2)*100.0);
 		}
 		//all other pins except A0.2 and A0.3
 		else {
@@ -98,7 +109,7 @@ static int sample(dev_ *device, char* q, int ind, volatile unsigned long* ADxCR,
 		int value = 0;
 
 		*ADxCR = 0x00020FF00 | mask;
-		*ADxCR |= 0x01000000;  // start conversion
+		*ADxCR |= 0x01000000;  // Set 24th bit of ADxCR register to start conversion
 
 		while((value & 0x80000000) == 0) {
 			value = *ADxDR;
@@ -109,11 +120,11 @@ static int sample(dev_ *device, char* q, int ind, volatile unsigned long* ADxCR,
 		// result. The result itself is unsigned. Hence a cast to
 		// 'unsigned short' yields the result with six bits of
 		// noise. Those are removed by the following shift operation.
-		return pushValue(device, q, ind, (unsigned short)value >> 6, ADxCR, mask );
+		return pushValue(device, q, ind, (unsigned short)value >> 6, ADxCR, mask);
 	}
 	else
 	{
-			return ind;
+		return ind;
 	}
 }
 
@@ -208,9 +219,7 @@ void MODE2ISR(void)
 			dev.xbee.xbee_cnt = 0;
 			/* Send Data through XBee */
 			if (dev.calibrationModeFLAG == 0) {
-				//uart0_SendChar(1, dev.sensor.weight_Total+'0');
-				//uart0_SendChar(1, '\n');
-				rprintf ("%d\r\n",dev.sensor.weight_Total);
+				rprintf ("%d,%d\r\n",dev.sensor.weight_Total,dev.sensor.battery_percent);
 			}
 
 			/* Put XBee in sleep mode */
@@ -312,14 +321,15 @@ void MODE2ISR(void)
 			dev.log.log_enable_cnt++;
 		}
 	}
-	SAMPLE(1, 3); //AD1.3
+//	SAMPLE(1, 3); //AD1.3
+	SAMPLE(1, 4); //AD1.4
 	SAMPLE(0, 3); //AD0.3
 	SAMPLE(0, 2); //AD0.2
-	SAMPLE(0, 1); //AD0.1
-	SAMPLE(1, 2); //AD1.2
-	SAMPLE(0, 4); //AD0.4
-	SAMPLE(1, 7); //AD1.7
-	SAMPLE(1, 6); //AD1.6
+//	SAMPLE(0, 1); //AD0.1
+//	SAMPLE(1, 2); //AD1.2
+//	SAMPLE(0, 4); //AD0.4
+//	SAMPLE(1, 7); //AD1.7
+//	SAMPLE(1, 6); //AD1.6
 	#undef SAMPLE
 
 	for(j = 0; j < ind; j++)

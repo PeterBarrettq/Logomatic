@@ -73,6 +73,11 @@ typedef struct _sensor {
 	int weight_Total;
 	uint8_t k, iter;
 	uint16_t total_WeightTemp;
+	float battery_volts;
+	int battery_percent;
+	float resistor_ratio;
+	float adc_resolution;
+	float adc_ref_volts;
 }sensor_;
 
 typedef struct _calibsw {
@@ -111,7 +116,7 @@ typedef struct _dev_ {
 	int    freq;
 	char   trig;
 	short frame;
-	char  ad1_7, ad1_6, ad1_3, ad1_2, ad0_4, ad0_3, ad0_2, ad0_1;
+	char  ad1_7, ad1_6, ad1_3, ad1_2, ad0_4, ad0_3, ad0_2, ad0_1, ad1_4;
 	uint8_t calibrationModeFLAG;//????? Moiz verify this flag
 	log_ log;
 	sensor_ sensor;

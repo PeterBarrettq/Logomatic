@@ -65,7 +65,6 @@ int main (void)
 	setup_uart0 (&dev, 9600, 0);
 	SPI1_Init();
 	fat_initialize();
-	print_init_values(&dev);
 
 	/* Flash Status Lights */
 	for(i = 0; i < 5; i++){
@@ -87,8 +86,6 @@ int main (void)
 	} else {
 		uart0_SendString (DEBUG_LOGOMATIC,"\r\nFile don't exist.");
 	}
-
-	print_init_values(&dev);
 
 	if(dev.mode==0)
 		mode_0(&dev);

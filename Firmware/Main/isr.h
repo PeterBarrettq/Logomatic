@@ -15,5 +15,6 @@
 #define XBEE_TICKS		10
 #define NUM_AVERAGE		16
 #define AD0CR_REG_ADDR		0xE0034000
+#define AD1CR_REG_ADDR		0xE0060000
 
 #endif /* MAIN_ISR_H_ */
