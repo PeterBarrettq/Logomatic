@@ -49,7 +49,7 @@ public class nCounter_App {
 	    
 		//create and configure the window
 		JFrame window = new JFrame();
-		window.setTitle("nCounter");
+		window.setTitle("nCounters");
 		window.setSize(1200,700);
 		window.setLayout(new BorderLayout());
 		window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE); //This command tells if i close the program close my entire program
@@ -94,7 +94,7 @@ public class nCounter_App {
 		
 		//create a chart
 		JFreeChart chart = ChartFactory.createXYLineChart("Total",
-						"MS",
+						"MSec",
 						"Weight",  
 						dataset,  
 						PlotOrientation.VERTICAL, false, false, false);		
