@@ -1,4 +1,4 @@
-package nCounters;
+package nCounters_App;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.event.ActionEvent;
@@ -15,7 +15,6 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JTextField;
-
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.ChartUtilities;
@@ -24,14 +23,14 @@ import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
-import com.fazecast.jSerialComm.SerialPort;  
+import com.fazecast.jSerialComm.SerialPort;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 
 
-public class sensorGraph {
+public class nCounter_App {
 	
 	static SerialPort selectedPort;
 	static JProgressBar b;
@@ -47,8 +46,6 @@ public class sensorGraph {
 	}
 	
 	public static void main(String[] args) {
-	    DateFormat df1 = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
-	    Calendar calobj = Calendar.getInstance();
 	    
 		//create and configure the window
 		JFrame window = new JFrame();
@@ -173,6 +170,8 @@ public class sensorGraph {
 					             * 
 					             ******************/
 					            try {
+					        	    DateFormat df1 = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
+					        	    Calendar calobj = Calendar.getInstance();
 					            	String path = textField1.getText()+".txt";
 //					            	String path = "//"+textField1.getText()+"//"+textField1.getText()+".txt";  //TODO: Moiz put the record the created directory, and do battery status work
 //					            	System.out.println(path);
@@ -216,10 +215,6 @@ public class sensorGraph {
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
-			        //saveChartAsJPEG(textField1.getText()+"_Chart.png", chart, 1200, 700);
-//					series1.clear();
-//					series2.clear();
-//					x = 0;
 					timeWrite = 0;
 				}
 			}
