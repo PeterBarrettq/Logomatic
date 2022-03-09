@@ -16,6 +16,16 @@ static int sensor_avg (int arr[], int average_cnt) {
 	return total;
 }
 
+static int voltage2percent(float v)
+{
+    float percent = 0.0;
+    percent = (123-(123/pow((1+pow((v/3.7),80)),0.165)));
+    if (percent > 100)
+        percent = 100;
+    if (percent < 0)
+    	percent = 0;
+    return ((int) percent);
+}
 
 static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile unsigned long* ADxCR, int mask)
 {
@@ -80,9 +90,8 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 			device->sensor.battery_volts = (((float)value/device->sensor.adc_resolution)*
 					device->sensor.adc_ref_volts)/device->sensor.resistor_ratio;
 			//Convert batt voltages to percent
-			device->sensor.battery_per_temp = device->sensor.battery_percent = (int)((device->sensor.battery_volts/4.2)*100.0);
-			if (device->sensor.battery_per_temp > 100)
-				device->sensor.battery_per_temp = 100;
+			device->sensor.battery_per_temp = device->sensor.battery_percent = voltage2percent(device->sensor.battery_volts);
+
 			//Collect all the samples
 			BatteryAvg[device->sensor.iter2++] = device->sensor.battery_per_temp;
 			//Average out the samples
@@ -339,15 +348,9 @@ void MODE2ISR(void)
 			dev.log.log_enable_cnt++;
 		}
 	}
-//	SAMPLE(1, 3); //AD1.3
 	SAMPLE(1, 4); //AD1.4
 	SAMPLE(0, 3); //AD0.3
 	SAMPLE(0, 2); //AD0.2
-//	SAMPLE(0, 1); //AD0.1
-//	SAMPLE(1, 2); //AD1.2
-//	SAMPLE(0, 4); //AD0.4
-//	SAMPLE(1, 7); //AD1.7
-//	SAMPLE(1, 6); //AD1.6
 	#undef SAMPLE
 
 	for(j = 0; j < ind; j++)
