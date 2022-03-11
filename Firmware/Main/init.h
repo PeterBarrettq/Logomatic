@@ -79,6 +79,7 @@ typedef struct _sensor {
 	float resistor_ratio;
 	float adc_resolution;
 	float adc_ref_volts;
+	int adc;
 }sensor_;
 
 typedef struct _calibsw {

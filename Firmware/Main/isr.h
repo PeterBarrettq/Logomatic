@@ -13,7 +13,7 @@
 #define CALIB_TIME		500    //10MS * 500 = 5000
 #define Calib			22 //Calib Button (D5)
 #define XBEE_TICKS		10
-#define NUM_AVERAGE		16
+#define NUM_AVERAGE		50
 #define AD0CR_REG_ADDR		0xE0034000
 #define AD1CR_REG_ADDR		0xE0060000
 

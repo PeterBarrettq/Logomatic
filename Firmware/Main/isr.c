@@ -7,6 +7,7 @@
 #include "isr.h"
 static int WeightAvg[NUM_AVERAGE]={};
 static int BatteryAvg[NUM_AVERAGE]={};
+//static batt_buffer[10] = {};
 
 static int sensor_avg (int arr[], int average_cnt) {
 	int k = 0, total=0;
@@ -87,18 +88,15 @@ static inline int pushValue(dev_ *device, char* q, int ind, int value, volatile 
 			}
 		}
 		else if ((ADxCR == (unsigned long*)AD1CR_REG_ADDR) && (mask == 16)) {
-			device->sensor.battery_volts = (((float)value/device->sensor.adc_resolution)*
-					device->sensor.adc_ref_volts)/device->sensor.resistor_ratio;
+			device->sensor.adc = value;
 			//Convert batt voltages to percent
-			device->sensor.battery_per_temp = device->sensor.battery_percent = voltage2percent(device->sensor.battery_volts);
-
 			//Collect all the samples
-			BatteryAvg[device->sensor.iter2++] = device->sensor.battery_per_temp;
+			BatteryAvg[device->sensor.iter2++] = value;
 			//Average out the samples
 			if (device->sensor.iter2 > NUM_AVERAGE) {
 				device->sensor.iter2 = 0;
-				device->sensor.battery_percent = sensor_avg(BatteryAvg, NUM_AVERAGE);
-
+				device->sensor.adc = sensor_avg(BatteryAvg, NUM_AVERAGE);
+				device->sensor.battery_volts = (((float)device->sensor.adc/device->sensor.adc_resolution)* device->sensor.adc_ref_volts)/device->sensor.resistor_ratio;
 			}
 
 		}
@@ -246,7 +244,8 @@ void MODE2ISR(void)
 			dev.xbee.xbee_cnt = 0;
 			/* Send Data through XBee */
 			if (dev.calibrationModeFLAG == 0) {
-				rprintf ("%d,%d\n",dev.sensor.weight_Total,dev.sensor.battery_percent);
+//				ftoa(dev.sensor.battery_volts, batt_buffer, 2) ;
+				rprintf ("%d,%d\n",dev.sensor.weight_Total,voltage2percent(dev.sensor.battery_volts));
 			}
 
 			/* Put XBee in sleep mode */

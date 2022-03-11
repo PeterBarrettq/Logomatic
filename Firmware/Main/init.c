@@ -2,19 +2,19 @@
 
 #define GPIO0_0_TXD0	(0x00<<0)  // 00
 #define GPIO0_1_RXD0	(0x01<<2)  // 00
-#define GPIO0_2_IO	(0x00<<4)  // 00
-#define GPIO0_3_IO	(0x00<<6)  // 00
+#define GPIO0_2_IO		(0x00<<4)  // 00
+#define GPIO0_3_IO		(0x00<<6)  // 00
 #define GPIO0_4_SCK0	(0x01<<8)  // 01
 #define GPIO0_5_MISO0	(0x01<<10) // 01
 #define GPIO0_6_MOSI0	(0x01<<12) // 01
-#define GPIO0_7_IO	(0x00<<14) // 00
+#define GPIO0_7_IO		(0x00<<14) // 00
 #define GPIO0_8_TXD1_10	(0x01<<16) // 01
 #define GPIO0_9_RXD1_10	(0x01<<18) // 01
-#define GPIO0_10_IO	(0x03<<20) // 11
-#define GPIO0_11_IO	(0x00<<22) // 00
-#define GPIO0_12_IO	(0x00<<24) // 00
+#define GPIO0_10_IO		(0x03<<20) // 11
+#define GPIO0_11_IO		(0x00<<22) // 00
+#define GPIO0_12_IO		(0x00<<24) // 00
 #define GPIO0_13_AD1_4	(0x03<<26) // 11
-#define GPIO0_14_IO	(0x00<<28) // 00
+#define GPIO0_14_IO		(0x00<<28) // 00
 #define GPIO0_15_AD1_5	(0x03<<30) // 11
 
 struct fat_file_struct* fd;
@@ -51,7 +51,7 @@ void Initialize(dev_ *device)
 	device->calibsw.firstCapture=1;
 	device->calibsw.secondCapture=0;
 	device->sensor.battery_percent=0;
-	device->sensor.resistor_ratio=0.5;
+	device->sensor.resistor_ratio=0.475;
 	device->sensor.adc_resolution=1024.0;
 	device->sensor.adc_ref_volts=3.3;
 	rprintf_devopen(putc_serial0);

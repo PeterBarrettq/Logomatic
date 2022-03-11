@@ -34,7 +34,7 @@ public class nCounter_App {
 	
 	static SerialPort selectedPort;
 	static JProgressBar b;
-	static int x = 0, timeWrite = 0;
+	static int x = 0, timeWrite = 0, cnt = 0;
 	static String line, data;
 	
 	private static void customizeChart(JFreeChart chart) {
@@ -94,7 +94,7 @@ public class nCounter_App {
 		
 		//create a chart
 		JFreeChart chart = ChartFactory.createXYLineChart("Total",
-						"MSec",
+						"Seconds",
 						"Weight",  
 						dataset,  
 						PlotOrientation.VERTICAL, false, false, false);		
@@ -159,6 +159,13 @@ public class nCounter_App {
 						            } else {
 							            series2.add(x, 0);
 						            }
+						            
+						            cnt++;
+						            if (cnt > 10) {
+						            	cnt = 0;
+						            	x++;
+						            }
+						            
 				            	} catch(Exception e) {
 								      e.printStackTrace();
 				            	}
@@ -194,12 +201,6 @@ public class nCounter_App {
 					             * DELAY HANDLING
 					             * 
 					             ******************/
-								try {
-									Thread.sleep(1);
-								} catch(InterruptedException ex) {
-								      ex.printStackTrace();
-								}
-								x++;
 							}
 							scanner.close();
 						}
