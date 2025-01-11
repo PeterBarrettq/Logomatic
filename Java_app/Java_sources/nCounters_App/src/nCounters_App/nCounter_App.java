@@ -8,6 +8,14 @@ import java.io.File;
 import java.io.FileWriter;
 import java.util.Calendar;
 import java.util.Scanner;
+
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.LineUnavailableException;
+import javax.sound.sampled.SourceDataLine;
+import javax.sound.sampled.UnsupportedAudioFileException;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
@@ -24,20 +32,27 @@ import org.jfree.chart.plot.XYPlot;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import com.fazecast.jSerialComm.SerialPort;
+
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URL;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.awt.Toolkit; // Import the Toolkit class to beep
 
 
-public class nCounter_App {
-	
+public class nCounter_App 
+{
 	static SerialPort selectedPort;
 	static JProgressBar b;
 	static int x = 0, timeWrite = 0, cnt = 0;
 	static String line, data;
-	
-	private static void customizeChart(JFreeChart chart) {
+	static int target_data = 0;
+	static int beep = 0;
+	public static float SAMPLE_RATE = 8000f;
+
+	private static void customizeChart(JFreeChart chart) 
+	{
 		XYPlot plot = chart.getXYPlot();
 		plot.setOutlinePaint(Color.BLUE); 	    // sets paint color for plot outlines
 	    plot.setBackgroundPaint(Color.BLACK);	// sets plot background		
@@ -45,8 +60,40 @@ public class nCounter_App {
 	    plot.setRangeGridlinePaint(Color.WHITE);
 	}
 	
-	public static void main(String[] args) {
-	    
+	public static void tone(int hz, int msecs) 
+	     throws LineUnavailableException 
+	{
+		tone(hz, msecs, 1.0);
+	}
+
+	public static void tone(int hz, int msecs, double vol)
+	    throws LineUnavailableException 
+	{
+	  byte[] buf = new byte[1];
+	  AudioFormat af = 
+	      new AudioFormat(
+	          SAMPLE_RATE, // sampleRate
+	          8,           // sampleSizeInBits
+	          1,           // channels
+	          true,        // signed
+	          false);      // bigEndian
+	  SourceDataLine sdl = AudioSystem.getSourceDataLine(af);
+	  sdl.open(af);
+	  sdl.start();
+	  for (int i=0; i < msecs*8; i++) 
+	  {
+	    double angle = i / (SAMPLE_RATE / hz) * 2.0 * Math.PI;
+	    buf[0] = (byte)(Math.sin(angle) * 127.0 * vol);
+	    sdl.write(buf,0,1);
+	  }
+	  sdl.drain();
+	  sdl.stop();
+	  sdl.close();
+	}
+	
+	/* Main */
+	public static void main(String[] args) 
+	{	
 		//create and configure the window
 		JFrame window = new JFrame();
 		window.setTitle("nCounters");
@@ -104,16 +151,20 @@ public class nCounter_App {
 		
 		
 		//configure the connect button and use another thread to listen for data
-		connectButton.addActionListener(new ActionListener() {
-			@Override public void actionPerformed (ActionEvent arg0) {
-				if (connectButton.getText().equals("Connect")) {
+		connectButton.addActionListener(new ActionListener() 
+		{
+			@Override public void actionPerformed (ActionEvent arg0) 
+			{
+				if (connectButton.getText().equals("Connect")) 
+				{
 					selectedPort = SerialPort.getCommPort(portList.getSelectedItem().toString());
 					selectedPort.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER,0,0);
 					selectedPort.setBaudRate(9600);
 					selectedPort.setNumDataBits(8);
 					selectedPort.setNumStopBits(SerialPort.NO_PARITY);
 					selectedPort.setParity(SerialPort.NO_PARITY);
-					if(selectedPort.openPort()) {
+					if(selectedPort.openPort()) 
+					{
 						connectButton.setText("Disconnect");
 						portList.setEnabled(false);
 					}
@@ -121,19 +172,18 @@ public class nCounter_App {
 					series2.clear();
 					x = 0;
 					
-		            /******************
-		             * 
-		             * CREATE FOLDER
-		             * 
-		             ******************/
-//					File f = new File(textField1.getText()); 
-//					if (f.mkdirs() == true) 	{System.out.println("Directory Created");} 
-//					else 						{System.out.println("Unsuccessful");}
+		            /* Create Folder */
+
+					//File f = new File(textField1.getText()); 
+					//if (f.mkdirs() == true) 	{System.out.println("Directory Created");} 
+					//else 						{System.out.println("Unsuccessful");}
 					
 					
 					//create a new thread that listens for incoming text and populates the graph
-					Thread thread = new Thread() {
-						@Override public void run() {
+					Thread thread = new Thread() 
+					{
+						@Override public void run() 
+						{
 							Scanner scanner = new Scanner(selectedPort.getInputStream());
 							FileWriter fw = null;
 				            BufferedWriter bw = null;
@@ -141,8 +191,10 @@ public class nCounter_App {
 				            int battery=0;
 				            int weight=0;
 				            String[] arrSplit;
-				            while(scanner.hasNextLine()) {
-				            	try {
+				            while(scanner.hasNextLine()) 
+				            {
+				            	try 
+				            	{
 					            	line = scanner.nextLine();
 					            	arrSplit = line.split(",");
 					            	weight = Integer.parseInt(arrSplit[0]);
@@ -151,63 +203,90 @@ public class nCounter_App {
 									if (battery <= 100)
 										b.setValue(battery); //set bat volts
 
-						            data = textField2.getText();
+									data = textField2.getText();
 						            
 						            //validation of target line
-						            if (data.matches("[0-9]+")) {
-							            series2.add(x, Integer.parseInt(data));		
-						            } else {
+						            if (data.matches("[0-9]+"))
+						            {
+                                    	System.out.println("Beep triggered! Weight: " + weight + " exceeds target: " + target_data);
+						            	target_data = Integer.parseInt (data);						            							            	
+						            	if ((weight > target_data) && (beep == 0))
+						            	{
+							                try {
+							        			nCounter_App.tone(2200, 100);   //2200, 500
+							        			System.out.println("beeped");
+							        			try {
+							        				Thread.sleep(10);
+							        			} catch (InterruptedException e) {
+							        				e.printStackTrace();
+							        			}
+							        		} catch (LineUnavailableException e) {
+							        			e.printStackTrace();
+							        		}
+						            		
+                                            beep = 1;
+						            	}
+						            	else if (weight < target_data) 
+						            	{
+						            		beep = 0;
+						            	}
+
+						            	System.out.println (target_data);
+							            series2.add(x, target_data);		
+						            } 
+						            else 
+						            {
 							            series2.add(x, 0);
 						            }
 						            
 						            cnt++;
-						            if (cnt > 10) {
+						            if (cnt > 10) 
+						            {
 						            	cnt = 0;
 						            	x++;
 						            }
 						            
-				            	} catch(Exception e) {
+				            	} 
+				            	catch(Exception e) 
+				            	{
 								      e.printStackTrace();
 				            	}
 				            	
 					            
-					            /******************
-					             * 
-					             * FILE HANDLING
-					             * 
-					             ******************/
+					            /* File Handling */
 					            try {
 					        	    DateFormat df1 = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
 					        	    Calendar calobj = Calendar.getInstance();
 					            	String path = textField1.getText()+".txt";
-//					            	String path = "//"+textField1.getText()+"//"+textField1.getText()+".txt";  //TODO: Moiz put the record the created directory, and do battery status work
-//					            	System.out.println(path);
+					                //String path = "//"+textField1.getText()+"//"+textField1.getText()+".txt";  //TODO: Moiz put the record the created directory, and do battery status work
+					            	//System.out.println(path);
 					                fw = new FileWriter(path, true);
 					                bw = new BufferedWriter(fw);
 					                out = new PrintWriter(bw);
-					                if (timeWrite==0) {
+					                if (timeWrite==0) 
+					                {
 							            out.println("TIMESTAMP (START) : " + df1.format(calobj.getTime()) + "\t\tTARGET LINE : " + data);
 						            	System.out.println("data:"+ df1.format(calobj.getTime()));
 					                	timeWrite = 1;
 					                }
 						            out.println(line + "\r\n");
 					                out.close();
-					            } catch (IOException e) {
+					            } 
+					            catch (IOException e) 
+					            {
 								      e.printStackTrace();
 					            }
 				
-					            /******************
-					             * 
-					             * DELAY HANDLING
-					             * 
-					             ******************/
+					            /* Delay Handling */
 							}
 							scanner.close();
 						}
 					};
 					thread.start();
-				} else {
-					//disconnect from serial port
+				} 
+				else 
+				{
+					/* Disconnect from serial port */
 					selectedPort.closePort();
 					portList.setEnabled(true);
 					connectButton.setText("Connect");
