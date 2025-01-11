@@ -10,18 +10,18 @@ import java.util.Calendar;
 import java.util.Scanner;
 
 import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.Clip;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
-import javax.sound.sampled.UnsupportedAudioFileException;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
@@ -35,11 +35,8 @@ import com.fazecast.jSerialComm.SerialPort;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.net.URL;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.awt.Toolkit; // Import the Toolkit class to beep
-
 
 public class nCounter_App 
 {
@@ -50,7 +47,8 @@ public class nCounter_App
 	static int target_data = 0;
 	static int beep = 0;
 	public static float SAMPLE_RATE = 8000f;
-
+    static JComboBox<String> feedbackComboBox;
+	
 	private static void customizeChart(JFreeChart chart) 
 	{
 		XYPlot plot = chart.getXYPlot();
@@ -114,6 +112,11 @@ public class nCounter_App
 		JLabel label2 = new JLabel("Target:");
 		JTextField  textField2 = new JTextField(5);
 		textField2.setText("0");
+		
+        // Create a JComboBox to select feedback option (Enable/Disable)
+        feedbackComboBox = new JComboBox<>(new String[] {"Disable Feedback", "Enable Feedback"});
+        feedbackComboBox.setSelectedIndex(0);  // Default is Disabled
+		
 		JPanel topPanel = new JPanel();
 		topPanel.add(label1);
 		topPanel.add(textField1);
@@ -124,6 +127,7 @@ public class nCounter_App
 		JLabel label3 = new JLabel("Battery level:");
 		topPanel.add(label3);
 		topPanel.add(b);
+		topPanel.add(feedbackComboBox);
 		topPanel.add(portList);
 		topPanel.add(connectButton);
 		window.add(topPanel, BorderLayout.NORTH);
@@ -149,140 +153,149 @@ public class nCounter_App
 		customizeChart(chart);
 		window.add(new ChartPanel(chart), BorderLayout.CENTER);
 		
-		
 		//configure the connect button and use another thread to listen for data
 		connectButton.addActionListener(new ActionListener() 
 		{
 			@Override public void actionPerformed (ActionEvent arg0) 
 			{
-				if (connectButton.getText().equals("Connect")) 
+		    	String Patient_name = textField1.getText().trim(); 
+		    	int target_line = Integer.parseInt(textField2.getText()); 
+		    	
+				if (connectButton.getText().equals("Connect"))
 				{
-					selectedPort = SerialPort.getCommPort(portList.getSelectedItem().toString());
-					selectedPort.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER,0,0);
-					selectedPort.setBaudRate(9600);
-					selectedPort.setNumDataBits(8);
-					selectedPort.setNumStopBits(SerialPort.NO_PARITY);
-					selectedPort.setParity(SerialPort.NO_PARITY);
-					if(selectedPort.openPort()) 
+					if ((Patient_name.isEmpty()) ||
+							(target_line == 0))
 					{
-						connectButton.setText("Disconnect");
-						portList.setEnabled(false);
+						System.out.println ("Parameters are not filled by user\n");
+						//TODO: Make text Field1 and text Field2 to Red as user haven't put a parameters
+						
+		                // Make Patient Name and Target textField red
+		                textField1.setBackground(Color.RED);
+		                textField2.setBackground(Color.RED);
 					}
-					series1.clear();
-					series2.clear();
-					x = 0;
-					
-		            /* Create Folder */
-
-					//File f = new File(textField1.getText()); 
-					//if (f.mkdirs() == true) 	{System.out.println("Directory Created");} 
-					//else 						{System.out.println("Unsuccessful");}
-					
-					
-					//create a new thread that listens for incoming text and populates the graph
-					Thread thread = new Thread() 
-					{
-						@Override public void run() 
+					else {
+						//Make text field white back again.
+		                textField1.setBackground(Color.WHITE);
+		                textField2.setBackground(Color.WHITE);
+		                
+						selectedPort = SerialPort.getCommPort(portList.getSelectedItem().toString());
+						selectedPort.setComPortTimeouts(SerialPort.TIMEOUT_SCANNER,0,0);
+						selectedPort.setBaudRate(9600);
+						selectedPort.setNumDataBits(8);
+						selectedPort.setNumStopBits(SerialPort.NO_PARITY);
+						selectedPort.setParity(SerialPort.NO_PARITY);
+						if(selectedPort.openPort()) 
 						{
-							Scanner scanner = new Scanner(selectedPort.getInputStream());
-							FileWriter fw = null;
-				            BufferedWriter bw = null;
-				            PrintWriter out = null;     
-				            int battery=0;
-				            int weight=0;
-				            String[] arrSplit;
-				            while(scanner.hasNextLine()) 
-				            {
-				            	try 
-				            	{
-					            	line = scanner.nextLine();
-					            	arrSplit = line.split(",");
-					            	weight = Integer.parseInt(arrSplit[0]);
-						            battery = Integer.parseInt(arrSplit[1]);
-									series1.add(x, weight);
-									if (battery <= 100)
-										b.setValue(battery); //set bat volts
-
-									data = textField2.getText();
-						            
-						            //validation of target line
-						            if (data.matches("[0-9]+"))
-						            {
-                                    	System.out.println("Beep triggered! Weight: " + weight + " exceeds target: " + target_data);
-						            	target_data = Integer.parseInt (data);						            							            	
-						            	if ((weight > target_data) && (beep == 0))
-						            	{
-							                try {
-							        			nCounter_App.tone(2200, 100);   //2200, 500
-							        			System.out.println("beeped");
-							        			try {
-							        				Thread.sleep(10);
-							        			} catch (InterruptedException e) {
-							        				e.printStackTrace();
-							        			}
-							        		} catch (LineUnavailableException e) {
-							        			e.printStackTrace();
-							        		}
-						            		
-                                            beep = 1;
-						            	}
-						            	else if (weight < target_data) 
-						            	{
-						            		beep = 0;
-						            	}
-
-						            	System.out.println (target_data);
-							            series2.add(x, target_data);		
-						            } 
-						            else 
-						            {
-							            series2.add(x, 0);
-						            }
-						            
-						            cnt++;
-						            if (cnt > 10) 
-						            {
-						            	cnt = 0;
-						            	x++;
-						            }
-						            
-				            	} 
-				            	catch(Exception e) 
-				            	{
-								      e.printStackTrace();
-				            	}
-				            	
-					            
-					            /* File Handling */
-					            try {
-					        	    DateFormat df1 = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
-					        	    Calendar calobj = Calendar.getInstance();
-					            	String path = textField1.getText()+".txt";
-					                //String path = "//"+textField1.getText()+"//"+textField1.getText()+".txt";  //TODO: Moiz put the record the created directory, and do battery status work
-					            	//System.out.println(path);
-					                fw = new FileWriter(path, true);
-					                bw = new BufferedWriter(fw);
-					                out = new PrintWriter(bw);
-					                if (timeWrite==0) 
-					                {
-							            out.println("TIMESTAMP (START) : " + df1.format(calobj.getTime()) + "\t\tTARGET LINE : " + data);
-						            	System.out.println("data:"+ df1.format(calobj.getTime()));
-					                	timeWrite = 1;
-					                }
-						            out.println(line + "\r\n");
-					                out.close();
-					            } 
-					            catch (IOException e) 
-					            {
-								      e.printStackTrace();
-					            }
-				
-					            /* Delay Handling */
-							}
-							scanner.close();
+							connectButton.setText("Disconnect");
+							portList.setEnabled(false);
 						}
-					};
-					thread.start();
+						series1.clear();
+						series2.clear();
+						x = 0;
+							
+						//create a new thread that listens for incoming text and populates the graph
+						Thread thread = new Thread() 
+						{
+							@Override public void run() 
+							{
+								Scanner scanner = new Scanner(selectedPort.getInputStream());
+								FileWriter fw = null;
+					            BufferedWriter bw = null;
+					            PrintWriter out = null;     
+					            int battery=0;
+					            int weight=0;
+					            String[] arrSplit;
+					            while(scanner.hasNextLine()) 
+					            {
+					            	try {
+						            	line = scanner.nextLine();
+						            	arrSplit = line.split(",");
+						            	weight = Integer.parseInt(arrSplit[0]);
+							            battery = Integer.parseInt(arrSplit[1]);
+										series1.add(x, weight);
+										if (battery <= 100)
+											b.setValue(battery); //set bat volts
+
+										data = textField2.getText();
+							            
+							            //validation of target line
+							            if (data.matches("[0-9]+"))
+							            {
+							            	target_data = Integer.parseInt (data);						            							            	
+							            	if ((weight > target_data) && 
+							            			(target_data !=0) && 
+							            			(beep == 0))
+							            	{
+		                                    	System.out.println("Beep triggered! Weight: " + weight + " exceeds target: " + target_data);
+								                try {
+								                	int freq = 2200;
+								                	int millisec = 300;
+								        			nCounter_App.tone(freq, millisec);
+								        			System.out.println("beeped");
+								        			try {
+								        				Thread.sleep(10);
+								        			} catch (InterruptedException e) {
+								        				e.printStackTrace();
+								        			}
+								        		} catch (LineUnavailableException e) {
+								        			e.printStackTrace();
+								        		}
+							            		
+	                                            beep = 1;
+							            	}
+							            	else if (weight < target_data) 
+							            	{
+							            		beep = 0;
+							            	}
+
+							            	System.out.println (target_data);
+								            series2.add(x, target_data);		
+							            } 
+							            else 
+							            {
+								            series2.add(x, 0);
+							            }
+							            
+							            cnt++;
+							            if (cnt > 10) 
+							            {
+							            	cnt = 0;
+							            	x++;
+							            }
+							            
+					            	} catch(Exception e) {
+									      e.printStackTrace();
+					            	}
+					            	
+						            /* File Handling */
+						            try {
+						        	    DateFormat df1 = new SimpleDateFormat("dd/MM/yy HH:mm:ss");
+						        	    Calendar calobj = Calendar.getInstance();
+						        	    String path = Patient_name +".txt";
+						                fw = new FileWriter(Patient_name +".txt", true);
+						                bw = new BufferedWriter(fw);
+						                out = new PrintWriter(bw);
+						                if (timeWrite==0) 
+						                {
+								            out.println("TIMESTAMP (START) : " + df1.format(calobj.getTime()) + "\t\tTARGET LINE : " + data);
+							            	System.out.println("data:"+ df1.format(calobj.getTime()));
+						                	timeWrite = 1;
+						                }
+							            out.println(line + "\r\n");
+						                out.close();
+						            } 
+						            catch (IOException e) 
+						            {
+									      e.printStackTrace();
+						            }
+					
+						            /* Delay Handling */
+								}
+								scanner.close();
+							}
+						};
+						thread.start();
+					}
 				} 
 				else 
 				{
@@ -290,6 +303,27 @@ public class nCounter_App
 					selectedPort.closePort();
 					portList.setEnabled(true);
 					connectButton.setText("Connect");
+					
+                    // If feedback is enabled, show feedback dialog
+                    if (feedbackComboBox.getSelectedIndex() == 1) {
+                        // Create JTextArea for larger input
+                        JTextArea textArea = new JTextArea(6, 40);  // 5 lines, 30 characters per line
+                        JScrollPane scrollPane = new JScrollPane(textArea);  // Add JScrollPane for scrollable text area
+                        int option = JOptionPane.showConfirmDialog(window, scrollPane, "Please provide feedback", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+                        
+                        if (option == JOptionPane.OK_OPTION) {
+                            String feedback = textArea.getText().trim();
+                            if (!feedback.isEmpty()) {
+                                // Store feedback in a text file
+                                try (BufferedWriter writer = new BufferedWriter(new FileWriter(Patient_name +".txt", true))) {
+                                    writer.write("Feedback: " + feedback + "\n");
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+                    }     
+					
 			        try {
 			        	ChartUtilities.saveChartAsPNG(new File(textField1.getText()+".png"), chart, 1200, 700);
 					} catch (IOException e) {
