@@ -222,33 +222,35 @@ public class nCounter_App
 							            if (data.matches("[0-9]+"))
 							            {
 							            	target_data = Integer.parseInt (data);						            							            	
-							            	if ((weight > target_data) && 
-							            			(target_data !=0) && 
-							            			(beep == 0))
+							            	if (feedbackComboBox.getSelectedIndex() == 1) 
 							            	{
-		                                    	System.out.println("Beep triggered! Weight: " + weight + " exceeds target: " + target_data);
-								                try {
-								                	int freq = 2200;
-								                	int millisec = 300;
-								        			nCounter_App.tone(freq, millisec);
-								        			System.out.println("beeped");
-								        			try {
-								        				Thread.sleep(10);
-								        			} catch (InterruptedException e) {
-								        				e.printStackTrace();
-								        			}
-								        		} catch (LineUnavailableException e) {
-								        			e.printStackTrace();
-								        		}
-							            		
-	                                            beep = 1;
+								            	if ((weight > target_data) && 
+								            			(target_data !=0) && 
+								            			(beep == 0))
+								            	{
+			                                    	System.out.println("Beep triggered! Weight: " + weight + " exceeds target: " + target_data);
+									                try {
+									                	int freq = 2200;
+									                	int millisec = 300;
+									        			nCounter_App.tone(freq, millisec);
+									        			System.out.println("beeped");
+									        			try {
+									        				Thread.sleep(10);
+									        			} catch (InterruptedException e) {
+									        				e.printStackTrace();
+									        			}
+									        		} catch (LineUnavailableException e) {
+									        			e.printStackTrace();
+									        		}
+								            		
+		                                            beep = 1;
+								            	}
+								            	else if (weight < target_data) 
+								            	{
+								            		beep = 0;
+								            	}
+								            	System.out.println (target_data);
 							            	}
-							            	else if (weight < target_data) 
-							            	{
-							            		beep = 0;
-							            	}
-
-							            	System.out.println (target_data);
 								            series2.add(x, target_data);		
 							            } 
 							            else 
